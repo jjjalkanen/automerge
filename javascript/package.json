@@ -73,7 +73,11 @@
     "build": "node ./scripts/build.mjs",
     "test": "ts-mocha --loader=ts-node/esm --experimental-specifier-resolution=node --type-check test/*.ts",
     "packaging-tests": "node packaging_tests/run.mjs",
-    "watch-docs": "typedoc src/index.ts --watch --readme none"
+    "watch-docs": "typedoc src/index.ts --watch --readme none",
+    "test:oblivious": "ts-mocha --loader=ts-node/esm --experimental-specifier-resolution=node --type-check -p tsconfig.oblivious.json test/oblivious_doc_test.ts"
+  },
+  "dependencies": {
+    "obliv-core": "git+ssh://git@github.com/jjjalkanen/oblivious-core.git#8b11d9b35a664185297ad6752e4ec2babe49e965"
   },
   "devDependencies": {
     "@types/expect": "^24.3.0",

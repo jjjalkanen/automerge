@@ -75,6 +75,8 @@ function valueAt(target: Target, prop: Prop): AutomergeValue | undefined {
       return null as AutomergeValue
     case "bytes":
       return val as AutomergeValue
+    case "oblivious":
+      return val as AutomergeValue
     case "timestamp":
       return val as AutomergeValue
     case "counter": {
@@ -105,12 +107,22 @@ type ImportedValue =
   | [Array<any>, "list"]
   | [Record<string, any>, "map"]
   | [boolean, "boolean"]
+  | [any, "oblivious"]
 
 function import_value(
   value: any,
   path: Prop[],
   context: Automerge,
 ): ImportedValue {
+  // Oblivious passthrough: detect encrypted opaque objects before any other checks.
+  // ObliviousString, ObliviousInt, and Obliv8 all have an oblivSelect method.
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    typeof (value as any).oblivSelect === "function"
+  ) {
+    return [value, "oblivious"] as any
+  }
   const type = typeof value
   switch (type) {
     case "object":

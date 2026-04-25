@@ -14,6 +14,7 @@ import {
   createObliviousString,
   createObliviousInt,
 } from "obliv-core";
+import { isOblivTrue, isOblivFalse } from "obliv-core/testing";
 import type { ObliviousBool } from "obliv-core";
 import {
   ObliviousAutomergeDoc,
@@ -28,28 +29,23 @@ import type { ObliviousString } from "obliv-core";
 /*  Helpers                                                  */
 /*-----------------------------------------------------------*/
 
-/** Extract the boolean value from an ObliviousBool result. */
-function unwrapBool(b: ObliviousBool): number {
-  return b.value;
-}
-
 /** Assert two oblivious strings are equal via eqString. */
 function assertOblivEq(
   a: ObliviousString,
   b: ObliviousString,
   msg?: string
 ): void {
-  assert.strictEqual(unwrapBool(eqString(a, b)), 1, msg);
+  assert.ok(isOblivTrue(eqString(a, b)), msg);
 }
 
 /** Assert a map entry is tombstoned. */
 function assertDeleted(entry: ObliviousMapEntry, msg?: string): void {
-  assert.strictEqual(entry.isDeleted.value, 1, msg ?? "expected entry to be deleted");
+  assert.ok(isOblivTrue(entry.isDeleted), msg ?? "expected entry to be deleted");
 }
 
 /** Assert a map entry is NOT tombstoned. */
 function assertNotDeleted(entry: ObliviousMapEntry, msg?: string): void {
-  assert.strictEqual(entry.isDeleted.value, 0, msg ?? "expected entry not to be deleted");
+  assert.ok(isOblivFalse(entry.isDeleted), msg ?? "expected entry not to be deleted");
 }
 
 /** Find a map entry whose key matches the given plain string. */
@@ -61,7 +57,7 @@ function findEntry(
   keyStr: string
 ): ObliviousMapEntry | undefined {
   const target = createObliviousString(keyStr);
-  return state.find((e) => eqString(e.key, target).value === 1);
+  return state.find((e) => isOblivTrue(eqString(e.key, target)));
 }
 
 /** Shorthand: wrap a plain string as an ObliviousString key/value. */
@@ -75,9 +71,8 @@ const val = (s: string): ObliviousString => createObliviousString(s);
 describe("ObliviousOpId", () => {
   it("round-trips counter and actorId", () => {
     const opId = createObliviousOpId(42, "actorA");
-    assert.strictEqual(
-      eqInt(opId.counter, createObliviousInt(42)).value,
-      1,
+    assert.ok(
+      isOblivTrue(eqInt(opId.counter, createObliviousInt(42))),
       "counter should equal 42"
     );
     assertOblivEq(opId.actorId, key("actorA"), "actorId should equal 'actorA'");
@@ -86,23 +81,23 @@ describe("ObliviousOpId", () => {
   it("higher counter wins", () => {
     const a = createObliviousOpId(10, "actor");
     const b = createObliviousOpId(5, "actor");
-    assert.strictEqual(isOpIdGreater(a, b).value, 1, "a(10) > b(5)");
-    assert.strictEqual(isOpIdGreater(b, a).value, 0, "b(5) not > a(10)");
+    assert.ok(isOblivTrue(isOpIdGreater(a, b)), "a(10) > b(5)");
+    assert.ok(isOblivFalse(isOpIdGreater(b, a)), "b(5) not > a(10)");
   });
 
   it("same counter uses actorId as tie-break", () => {
     // "actorB" > "actorA" lexicographically
     const a = createObliviousOpId(5, "actorB");
     const b = createObliviousOpId(5, "actorA");
-    assert.strictEqual(isOpIdGreater(a, b).value, 1, "actorB > actorA");
-    assert.strictEqual(isOpIdGreater(b, a).value, 0, "actorA not > actorB");
+    assert.ok(isOblivTrue(isOpIdGreater(a, b)), "actorB > actorA");
+    assert.ok(isOblivFalse(isOpIdGreater(b, a)), "actorA not > actorB");
   });
 
   it("equal opIds are not greater in either direction", () => {
     const a = createObliviousOpId(5, "actorA");
     const b = createObliviousOpId(5, "actorA");
-    assert.strictEqual(isOpIdGreater(a, b).value, 0, "equal is not greater (a vs b)");
-    assert.strictEqual(isOpIdGreater(b, a).value, 0, "equal is not greater (b vs a)");
+    assert.ok(isOblivFalse(isOpIdGreater(a, b)), "equal is not greater (a vs b)");
+    assert.ok(isOblivFalse(isOpIdGreater(b, a)), "equal is not greater (b vs a)");
   });
 
   it("oblivSelect with TRUE8 returns self fields; FALSE8 returns other's fields", () => {
@@ -110,17 +105,15 @@ describe("ObliviousOpId", () => {
     const b = createObliviousOpId(20, "actorB");
 
     const selectedTrue = a.oblivSelect(TRUE8, b);
-    assert.strictEqual(
-      eqInt(selectedTrue.counter, createObliviousInt(10)).value,
-      1,
+    assert.ok(
+      isOblivTrue(eqInt(selectedTrue.counter, createObliviousInt(10))),
       "TRUE8 should select a.counter=10"
     );
     assertOblivEq(selectedTrue.actorId, key("actorA"), "TRUE8 should select a.actorId");
 
     const selectedFalse = a.oblivSelect(FALSE8, b);
-    assert.strictEqual(
-      eqInt(selectedFalse.counter, createObliviousInt(20)).value,
-      1,
+    assert.ok(
+      isOblivTrue(eqInt(selectedFalse.counter, createObliviousInt(20))),
       "FALSE8 should select b.counter=20"
     );
     assertOblivEq(selectedFalse.actorId, key("actorB"), "FALSE8 should select b.actorId");
@@ -478,9 +471,8 @@ describe("ObliviousMapEntry - oblivSelect", () => {
     assertOblivEq(selected.key, key("a"), "TRUE8 should select first entry's key 'a'");
     assertOblivEq(selected.value, val("va"), "TRUE8 should select first entry's value 'va'");
     assertNotDeleted(selected, "TRUE8 should select first entry's isDeleted (not deleted)");
-    assert.strictEqual(
-      eqInt(selected.opId.counter, createObliviousInt(1)).value,
-      1,
+    assert.ok(
+      isOblivTrue(eqInt(selected.opId.counter, createObliviousInt(1))),
       "TRUE8 should select first entry's opId.counter=1"
     );
   });
@@ -497,9 +489,8 @@ describe("ObliviousMapEntry - oblivSelect", () => {
     assertOblivEq(selected.key, key("b"), "FALSE8 should select second entry's key 'b'");
     assertOblivEq(selected.value, val("vb"), "FALSE8 should select second entry's value 'vb'");
     assertDeleted(selected, "FALSE8 should select second entry's isDeleted (deleted)");
-    assert.strictEqual(
-      eqInt(selected.opId.counter, createObliviousInt(3)).value,
-      1,
+    assert.ok(
+      isOblivTrue(eqInt(selected.opId.counter, createObliviousInt(3))),
       "FALSE8 should select second entry's opId.counter=3 (tombstone op)"
     );
   });

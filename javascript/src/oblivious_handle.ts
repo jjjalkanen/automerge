@@ -11,6 +11,8 @@
  */
 import { STATE, OBJECT_ID } from "./constants.js"
 
+type ListObject = { type: "list"; data: any[] }
+
 function randomActorId(): string {
   const bytes = new Uint8Array(16)
   if (typeof crypto !== "undefined" && crypto.getRandomValues) {
@@ -36,6 +38,8 @@ export class ObliviousHandle {
   readonly __wbg_ptr = 0
 
   private store: Map<string, any> = new Map()
+  private objects: Map<string, ListObject> = new Map()
+  private nextObjId = 1
   private readonly actorId: string
   private version = 0
   private _pendingOps = 0
@@ -45,29 +49,58 @@ export class ObliviousHandle {
     this.actorId = actorId
   }
 
-  // ── Core map ops ──────────────────────────────────────────────────────────
+  private allocId(): string {
+    return `${this.nextObjId++}@${this.actorId}`
+  }
 
-  put(_obj: string, prop: string, value: any, _datatype: string): void {
-    this.store.set(prop, value)
+  // ── Core map / list ops ───────────────────────────────────────────────────
+
+  put(obj: string, prop: any, value: any, _datatype: string): void {
+    const list = this.objects.get(obj)
+    if (list) {
+      list.data[prop as number] = value
+    } else {
+      this.store.set(String(prop), value)
+    }
     this._pendingOps++
   }
 
-  getWithType(_obj: string, prop: string): [string, any] | null {
-    if (!this.store.has(prop)) return null
-    return ["oblivious", this.store.get(prop)]
+  getWithType(obj: string, prop: any): [string, any] | null {
+    const list = this.objects.get(obj)
+    if (list) {
+      const idx = typeof prop === "string" ? parseInt(prop, 10) : prop
+      if (idx < 0 || idx >= list.data.length) return null
+      return ["oblivious", list.data[idx]]
+    }
+    const key = String(prop)
+    if (!this.store.has(key)) return null
+    const val = this.store.get(key)
+    if (typeof val === "string" && this.objects.has(val)) {
+      return ["list", val]
+    }
+    return ["oblivious", val]
   }
 
-  /** Same contract as getWithType — used by list helpers in proxies.ts. */
-  get(_obj: string, prop: string): [string, any] | null {
-    return this.getWithType(_obj, prop)
+  get(obj: string, prop: any): [string, any] | null {
+    return this.getWithType(obj, prop)
   }
 
-  keys(_obj: string): string[] {
+  keys(obj: string): string[] {
+    const list = this.objects.get(obj)
+    if (list) {
+      return list.data.map((_, i) => String(i))
+    }
     return [...this.store.keys()]
   }
 
-  delete(_obj: string, prop: string): void {
-    this.store.delete(prop)
+  delete(obj: string, prop: any): void {
+    const list = this.objects.get(obj)
+    if (list) {
+      const idx = typeof prop === "string" ? parseInt(prop, 10) : prop
+      list.data.splice(idx, 1)
+    } else {
+      this.store.delete(String(prop))
+    }
     this._pendingOps++
   }
 
@@ -86,7 +119,19 @@ export class ObliviousHandle {
   materialize(_obj: string, _heads: any, meta: any): any {
     const doc: Record<string, any> = {}
     for (const [key, value] of this.store) {
-      doc[key] = value
+      const listObj = this.objects.get(value)
+      if (listObj) {
+        const arr = [...listObj.data]
+        Object.defineProperty(arr, OBJECT_ID, {
+          value,
+          enumerable: false,
+          configurable: true,
+        })
+        if (this._freezeEnabled) Object.freeze(arr)
+        doc[key] = arr
+      } else {
+        doc[key] = value
+      }
     }
     Object.defineProperty(doc, STATE, {
       value: meta,
@@ -156,31 +201,62 @@ export class ObliviousHandle {
   fork(actor?: string, _heads?: any): ObliviousHandle {
     const next = new ObliviousHandle(actor || randomActorId())
     next.store = new Map(this.store)
+    for (const [id, obj] of this.objects) {
+      next.objects.set(id, { type: obj.type, data: [...obj.data] })
+    }
+    next.nextObjId = this.nextObjId
     next._freezeEnabled = this._freezeEnabled
     return next
   }
 
-  // ── Stubs for nested-object / list / text ops ─────────────────────────────
-  // These are never called for a flat oblivious map, but proxies.ts requires
-  // the methods to exist on the context object.
+  // ── List / nested-object ops ───────────────────────────────────────────────
 
-  putObject(_obj: string, _prop: any, _value: any): string {
-    throw new Error("oblivious: nested objects not supported")
+  putObject(obj: string, prop: any, value: any): string {
+    if (Array.isArray(value)) {
+      const id = this.allocId()
+      this.objects.set(id, { type: "list", data: [] })
+      if (this.objects.has(obj)) {
+        this.objects.get(obj)!.data[prop as number] = id
+      } else {
+        this.store.set(String(prop), id)
+      }
+      this._pendingOps++
+      return id
+    }
+    throw new Error("oblivious: nested maps not supported")
   }
 
-  insertObject(_obj: string, _index: any, _value: any): string {
-    throw new Error("oblivious: list operations not supported")
+  insertObject(obj: string, index: any, value: any): string {
+    if (Array.isArray(value)) {
+      const id = this.allocId()
+      this.objects.set(id, { type: "list", data: [] })
+      const list = this.objects.get(obj)
+      if (list) {
+        list.data.splice(index as number, 0, id)
+      }
+      this._pendingOps++
+      return id
+    }
+    throw new Error("oblivious: nested maps not supported")
   }
 
-  insert(_obj: string, _index: any, _value: any, _datatype: string): void {
-    throw new Error("oblivious: list operations not supported")
+  insert(obj: string, index: any, value: any, _datatype: string): void {
+    const list = this.objects.get(obj)
+    if (!list) throw new Error("oblivious: insert target is not a list")
+    list.data.splice(index as number, 0, value)
+    this._pendingOps++
   }
 
-  splice(_obj: string, _index: any, _n: number, _text?: string): void {
-    throw new Error("oblivious: list operations not supported")
+  splice(obj: string, index: any, n: number, _text?: string): void {
+    const list = this.objects.get(obj)
+    if (!list) throw new Error("oblivious: splice target is not a list")
+    list.data.splice(index as number, n)
+    this._pendingOps++
   }
 
-  length(_obj: string): number {
+  length(obj: string): number {
+    const list = this.objects.get(obj)
+    if (list) return list.data.length
     return 0
   }
 

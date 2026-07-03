@@ -31,9 +31,12 @@
   <h1>Automerge Oblivious Text Editor</h1>
   <div id="status">Checking window.oblivious...</div>
   <div id="output"></div>
-  <div id="log" class="info" style="margin-top: 1em; font-size: 14px;"></div>
+  <div id="log" class="info" style="margin-top: 1em; font-size: 14px; white-space: pre-wrap;"></div>
 
   <script type="module">
+    // Requires: dom.oblivious.enabled = true, dom.encryptedtext.enabled = true
+    import * as Automerge from './automerge-oblivious.js';
+
     const status = document.getElementById('status');
     const output = document.getElementById('output');
     const logEl = document.getElementById('log');
@@ -49,128 +52,92 @@
     }
 
     const oc = window.oblivious;
-    status.textContent = 'window.oblivious available. Initializing...';
 
-    // ── Helpers ─────────────────────────────────────────────────────────
+    // ── Wire browser backends ──────────────────────────────────────────
 
-    function createObliviousChar(ch) {
-      // Layout: [validity(1), lo, hi] — 3 bytes
-      const arr = oc.createByteArray(3);
-      const code = ch.charCodeAt(0);
-      arr.write(0, oc.fromByte(1), oc.TRUE);  // validity = 1
-      arr.write(1, oc.fromByte(code & 0xff), oc.TRUE);
-      arr.write(2, oc.fromByte((code >> 8) & 0xff), oc.TRUE);
-      return arr;
+    Automerge.initBrowserBackend(oc);
+    Automerge.setBrowserBackend(() => oc.createArray());
+    log('Browser backends wired: initBrowserBackend + setBrowserBackend');
+
+    // ── Helper: render doc.chars to <securetext> ───────────────────────
+
+    function renderDoc(doc) {
+      output.innerHTML = '';
+      const chars = doc.chars;
+      if (!chars || chars.length === 0) return;
+
+      Automerge.renderObliviousText(
+        Array.from({ length: chars.length }, (_, i) => chars[i]),
+        output.querySelector('securetext') || (() => {
+          const st = document.createElement('securetext');
+          output.appendChild(st);
+          return st;
+        })(),
+        oc,
+      );
     }
 
-    function createObliviousInt(n) {
-      // Layout: [validity(1), b3, b2, b1, b0] — 5 bytes
-      const arr = oc.createByteArray(5);
-      arr.write(0, oc.fromByte(1), oc.TRUE);  // validity = 1
-      arr.write(1, oc.fromByte((n >>> 24) & 0xff), oc.TRUE);
-      arr.write(2, oc.fromByte((n >>> 16) & 0xff), oc.TRUE);
-      arr.write(3, oc.fromByte((n >>> 8) & 0xff), oc.TRUE);
-      arr.write(4, oc.fromByte(n & 0xff), oc.TRUE);
-      return arr;
-    }
+    // ── Create document and insert initial text via Automerge.change ──
 
-    function isValid(value) {
-      const v = value.read(0);
-      return oc.eq(v, oc.fromByte(1));
-    }
+    const s = Automerge.createObliviousString;
 
-    // ── ObliviousArray-backed document ──────────────────────────────────
+    let doc = Automerge.init();
+    log(`Automerge.init() done`);
 
-    const chars = oc.createArray();
-    log(`Created ObliviousArray, initial length: ${chars.length}`);
+    doc = Automerge.change(doc, d => {
+      d.chars = [];
+    });
+    log(`Created chars list, length: ${doc.chars.length}`);
 
-    // Insert "Hello" using public indices (simulating initial load)
-    const hello = "Hello";
-    for (let i = 0; i < hello.length; i++) {
-      chars.insertAt(i, createObliviousChar(hello[i]));
-    }
-    log(`After inserting "${hello}": length=${chars.length}`);
-
-    // ── Render via <securetext> ─────────────────────────────────────────
-
-    function renderArray(arr, container) {
-      container.innerHTML = '';
-      if (arr.length === 0) return;
-
-      // Concatenate character data, skipping validity byte from each element
-      const first = arr.get(0);
-      let combined = oc.sliceArray(first, 1, first.length);
-      for (let i = 1; i < arr.length; i++) {
-        const elem = arr.get(i);
-        const charData = oc.sliceArray(elem, 1, elem.length);
-        combined = oc.concatArrays(combined, charData);
+    doc = Automerge.change(doc, d => {
+      const text = 'Hello';
+      for (const ch of text) {
+        d.chars.push(s(ch));
       }
+    });
+    log(`After inserting "Hello": length=${doc.chars.length}`);
+    renderDoc(doc);
 
-      const st = document.createElement('securetext');
-      st.value = combined.toBase64();
-      container.appendChild(st);
-    }
-
-    renderArray(chars, output);
-
-    // ── Oblivious insert at encrypted position ──────────────────────────
-    // Simulate a keystroke event: insert " CRDT" at encrypted position 5
+    // ── Edit: insert " CRDT" at position 5 ─────────────────────────────
 
     setTimeout(() => {
-      const insertText = " CRDT";
-      for (let i = 0; i < insertText.length; i++) {
-        const secretPos = createObliviousInt(5 + i);
-        chars.obliviousInsert(secretPos, createObliviousChar(insertText[i]));
-      }
-      log(`After oblivious insert "${insertText}" at secret pos 5: length=${chars.length}`);
-
-      renderArray(chars, output);
+      doc = Automerge.change(doc, d => {
+        const text = ' CRDT';
+        for (let i = 0; i < text.length; i++) {
+          d.chars.insertAt(5 + i, s(text[i]));
+        }
+      });
+      log(`After inserting " CRDT" at 5: length=${doc.chars.length}`);
+      renderDoc(doc);
     }, 500);
 
-    // ── Oblivious delete at encrypted position ──────────────────────────
-    // Delete last character ("o") at encrypted position
+    // ── Edit: delete last character ─────────────────────────────────────
 
     setTimeout(() => {
-      const lastIdx = chars.length - 1;
-      const secretPos = createObliviousInt(lastIdx);
-      chars.obliviousDelete(secretPos);
-      log(`After oblivious delete at secret pos ${lastIdx}: length=${chars.length} (unchanged — dummy fill)`);
-
-      renderArray(chars, output);
-
-      status.textContent =
-        `ObliviousArray demo: ${chars.length} elements. ` +
-        `Used obliviousInsert (encrypted position) and obliviousDelete (size unchanged, dummy fill). ` +
-        `Cursor position never exposed to JS.`;
+      doc = Automerge.change(doc, d => {
+        d.chars.deleteAt(d.chars.length - 1, 1);
+      });
+      log(`After deleting last char: length=${doc.chars.length}`);
+      renderDoc(doc);
     }, 1000);
 
-    // ── Securetext editing events (when available) ──────────────────────
+    // ── Fork and concurrent edit ────────────────────────────────────────
 
     setTimeout(() => {
-      const st = output.querySelector('securetext');
-      if (st && typeof st.addEventListener === 'function') {
-        st.addEventListener('secureinput', (e) => {
-          // e.position = ObliviousByteArray (encrypted index)
-          // e.character = ObliviousByteArray (encrypted char, 2 bytes UTF-16)
-          if (e.position && e.character) {
-            chars.obliviousInsert(e.position, e.character);
-            renderArray(chars, output);
-            log(`secureinput: inserted character at encrypted position`);
-          }
-        });
+      const fork = Automerge.clone(doc);
+      log(`Forked document, fork length=${fork.chars.length}`);
 
-        st.addEventListener('securedelete', (e) => {
-          if (e.position) {
-            chars.obliviousDelete(e.position);
-            renderArray(chars, output);
-            log(`securedelete: deleted at encrypted position`);
-          }
-        });
+      doc = Automerge.change(doc, d => {
+        d.chars.insertAt(0, s('!'));
+      });
 
-        log('Registered securetext editing event listeners');
-      } else {
-        log('securetext editing events not available yet');
-      }
+      log(`Original after prepending "!": length=${doc.chars.length}`);
+      renderDoc(doc);
+
+      status.textContent =
+        `Automerge oblivious demo: ${doc.chars.length} characters. ` +
+        `All edits via Automerge.change() with ObliviousArray backend. ` +
+        `Values have validity bytes; cursor positions stay in C++.`;
     }, 1500);
   </script>
 </body>

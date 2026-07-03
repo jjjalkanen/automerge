@@ -6,12 +6,69 @@
  * caller). Automerge never sees plaintext — encryption/decryption is done
  * outside this module, at the sandbox boundary.
  *
+ * When a browser ObliviousArray factory is provided via setBrowserBackend(),
+ * list storage uses C++ ObliviousArray (encrypted-position ops). Otherwise
+ * falls back to plain JS arrays for pure-TS testing.
+ *
  * No obliv-core imports. This is intentional: the proxy layer is a pure
  * passthrough, treating encrypted values as opaque JS objects.
  */
 import { STATE, OBJECT_ID } from "./constants.js"
 
-type ListObject = { type: "list"; data: any[] }
+// Browser ObliviousArray — opaque DOM object from window.oblivious.createArray()
+interface BrowserObliviousArray {
+  readonly length: number;
+  get(index: number): any;
+  set(index: number, value: any): void;
+  insertAt(index: number, value: any): void;
+  deleteAt(index: number): void;
+}
+
+type ListBackend = BrowserObliviousArray | any[];
+
+let arrayFactory: (() => BrowserObliviousArray) | null = null;
+
+/**
+ * Provide the browser's ObliviousArray factory (window.oblivious.createArray).
+ * When set, all new lists use C++ ObliviousArray storage.
+ */
+export function setBrowserBackend(createArray: () => BrowserObliviousArray): void {
+  arrayFactory = createArray;
+}
+
+function createListBackend(): ListBackend {
+  return arrayFactory ? arrayFactory() : [];
+}
+
+function isBrowserArray(backend: ListBackend): backend is BrowserObliviousArray {
+  return arrayFactory !== null && !Array.isArray(backend);
+}
+
+function listGet(backend: ListBackend, index: number): any {
+  if (isBrowserArray(backend)) return backend.get(index);
+  return backend[index];
+}
+
+function listSet(backend: ListBackend, index: number, value: any): void {
+  if (isBrowserArray(backend)) { backend.set(index, value); return; }
+  backend[index] = value;
+}
+
+function listInsert(backend: ListBackend, index: number, value: any): void {
+  if (isBrowserArray(backend)) { backend.insertAt(index, value); return; }
+  backend.splice(index, 0, value);
+}
+
+function listDelete(backend: ListBackend, index: number): void {
+  if (isBrowserArray(backend)) { backend.deleteAt(index); return; }
+  backend.splice(index, 1);
+}
+
+function listLength(backend: ListBackend): number {
+  return backend.length;
+}
+
+type ListObject = { type: "list"; data: ListBackend }
 
 function randomActorId(): string {
   const bytes = new Uint8Array(16)
@@ -58,7 +115,7 @@ export class ObliviousHandle {
   put(obj: string, prop: any, value: any, _datatype: string): void {
     const list = this.objects.get(obj)
     if (list) {
-      list.data[prop as number] = value
+      listSet(list.data, prop as number, value)
     } else {
       this.store.set(String(prop), value)
     }
@@ -69,8 +126,8 @@ export class ObliviousHandle {
     const list = this.objects.get(obj)
     if (list) {
       const idx = typeof prop === "string" ? parseInt(prop, 10) : prop
-      if (idx < 0 || idx >= list.data.length) return null
-      return ["oblivious", list.data[idx]]
+      if (idx < 0 || idx >= listLength(list.data)) return null
+      return ["oblivious", listGet(list.data, idx)]
     }
     const key = String(prop)
     if (!this.store.has(key)) return null
@@ -88,7 +145,10 @@ export class ObliviousHandle {
   keys(obj: string): string[] {
     const list = this.objects.get(obj)
     if (list) {
-      return list.data.map((_, i) => String(i))
+      const len = listLength(list.data)
+      const keys: string[] = []
+      for (let i = 0; i < len; i++) keys.push(String(i))
+      return keys
     }
     return [...this.store.keys()]
   }
@@ -97,7 +157,7 @@ export class ObliviousHandle {
     const list = this.objects.get(obj)
     if (list) {
       const idx = typeof prop === "string" ? parseInt(prop, 10) : prop
-      list.data.splice(idx, 1)
+      listDelete(list.data, idx)
     } else {
       this.store.delete(String(prop))
     }
@@ -121,7 +181,9 @@ export class ObliviousHandle {
     for (const [key, value] of this.store) {
       const listObj = this.objects.get(value)
       if (listObj) {
-        const arr = [...listObj.data]
+        const len = listLength(listObj.data)
+        const arr: any[] = []
+        for (let i = 0; i < len; i++) arr.push(listGet(listObj.data, i))
         Object.defineProperty(arr, OBJECT_ID, {
           value,
           enumerable: false,
@@ -202,7 +264,12 @@ export class ObliviousHandle {
     const next = new ObliviousHandle(actor || randomActorId())
     next.store = new Map(this.store)
     for (const [id, obj] of this.objects) {
-      next.objects.set(id, { type: obj.type, data: [...obj.data] })
+      const copy = createListBackend()
+      const len = listLength(obj.data)
+      for (let i = 0; i < len; i++) {
+        listInsert(copy, i, listGet(obj.data, i))
+      }
+      next.objects.set(id, { type: obj.type, data: copy })
     }
     next.nextObjId = this.nextObjId
     next._freezeEnabled = this._freezeEnabled
@@ -214,9 +281,9 @@ export class ObliviousHandle {
   putObject(obj: string, prop: any, value: any): string {
     if (Array.isArray(value)) {
       const id = this.allocId()
-      this.objects.set(id, { type: "list", data: [] })
+      this.objects.set(id, { type: "list", data: createListBackend() })
       if (this.objects.has(obj)) {
-        this.objects.get(obj)!.data[prop as number] = id
+        listSet(this.objects.get(obj)!.data, prop as number, id)
       } else {
         this.store.set(String(prop), id)
       }
@@ -229,10 +296,10 @@ export class ObliviousHandle {
   insertObject(obj: string, index: any, value: any): string {
     if (Array.isArray(value)) {
       const id = this.allocId()
-      this.objects.set(id, { type: "list", data: [] })
+      this.objects.set(id, { type: "list", data: createListBackend() })
       const list = this.objects.get(obj)
       if (list) {
-        list.data.splice(index as number, 0, id)
+        listInsert(list.data, index as number, id)
       }
       this._pendingOps++
       return id
@@ -243,20 +310,22 @@ export class ObliviousHandle {
   insert(obj: string, index: any, value: any, _datatype: string): void {
     const list = this.objects.get(obj)
     if (!list) throw new Error("oblivious: insert target is not a list")
-    list.data.splice(index as number, 0, value)
+    listInsert(list.data, index as number, value)
     this._pendingOps++
   }
 
   splice(obj: string, index: any, n: number, _text?: string): void {
     const list = this.objects.get(obj)
     if (!list) throw new Error("oblivious: splice target is not a list")
-    list.data.splice(index as number, n)
+    for (let i = 0; i < n; i++) {
+      listDelete(list.data, index as number)
+    }
     this._pendingOps++
   }
 
   length(obj: string): number {
     const list = this.objects.get(obj)
-    if (list) return list.data.length
+    if (list) return listLength(list.data)
     return 0
   }
 

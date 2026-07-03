@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Automerge Oblivious Text Editor — Demo</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: monospace;
+      padding: 2em;
+    }
+    h1 { color: #00d230; }
+    #status { color: #888; margin-bottom: 1em; }
+    #output {
+      border: 1px solid #333;
+      padding: 1em;
+      min-height: 3em;
+      background: #1a1a1a;
+    }
+    securetext {
+      display: block;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+    .error { color: #f44; }
+    .info { color: #4af; }
+  </style>
+</head>
+<body>
+  <h1>Automerge Oblivious Text Editor</h1>
+  <div id="status">Checking window.oblivious...</div>
+  <div id="output"></div>
+  <div id="log" class="info" style="margin-top: 1em; font-size: 14px;"></div>
+
+  <script type="module">
+    const status = document.getElementById('status');
+    const output = document.getElementById('output');
+    const logEl = document.getElementById('log');
+
+    function log(msg) {
+      logEl.textContent += msg + '\n';
+    }
+
+    if (!window.oblivious) {
+      status.textContent = 'window.oblivious not available. Enable dom.oblivious.enabled in about:config.';
+      status.classList.add('error');
+      throw new Error('window.oblivious not available');
+    }
+
+    const oc = window.oblivious;
+    status.textContent = 'window.oblivious available. Initializing...';
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    function createObliviousChar(ch) {
+      // Layout: [validity(1), lo, hi] — 3 bytes
+      const arr = oc.createByteArray(3);
+      const code = ch.charCodeAt(0);
+      arr.write(0, oc.fromByte(1), oc.TRUE);  // validity = 1
+      arr.write(1, oc.fromByte(code & 0xff), oc.TRUE);
+      arr.write(2, oc.fromByte((code >> 8) & 0xff), oc.TRUE);
+      return arr;
+    }
+
+    function createObliviousInt(n) {
+      // Layout: [validity(1), b3, b2, b1, b0] — 5 bytes
+      const arr = oc.createByteArray(5);
+      arr.write(0, oc.fromByte(1), oc.TRUE);  // validity = 1
+      arr.write(1, oc.fromByte((n >>> 24) & 0xff), oc.TRUE);
+      arr.write(2, oc.fromByte((n >>> 16) & 0xff), oc.TRUE);
+      arr.write(3, oc.fromByte((n >>> 8) & 0xff), oc.TRUE);
+      arr.write(4, oc.fromByte(n & 0xff), oc.TRUE);
+      return arr;
+    }
+
+    function isValid(value) {
+      const v = value.read(0);
+      return oc.eq(v, oc.fromByte(1));
+    }
+
+    // ── ObliviousArray-backed document ──────────────────────────────────
+
+    const chars = oc.createArray();
+    log(`Created ObliviousArray, initial length: ${chars.length}`);
+
+    // Insert "Hello" using public indices (simulating initial load)
+    const hello = "Hello";
+    for (let i = 0; i < hello.length; i++) {
+      chars.insertAt(i, createObliviousChar(hello[i]));
+    }
+    log(`After inserting "${hello}": length=${chars.length}`);
+
+    // ── Render via <securetext> ─────────────────────────────────────────
+
+    function renderArray(arr, container) {
+      container.innerHTML = '';
+      if (arr.length === 0) return;
+
+      // Concatenate character data, skipping validity byte from each element
+      const first = arr.get(0);
+      let combined = oc.sliceArray(first, 1, first.length);
+      for (let i = 1; i < arr.length; i++) {
+        const elem = arr.get(i);
+        const charData = oc.sliceArray(elem, 1, elem.length);
+        combined = oc.concatArrays(combined, charData);
+      }
+
+      const st = document.createElement('securetext');
+      st.value = combined.toBase64();
+      container.appendChild(st);
+    }
+
+    renderArray(chars, output);
+
+    // ── Oblivious insert at encrypted position ──────────────────────────
+    // Simulate a keystroke event: insert " CRDT" at encrypted position 5
+
+    setTimeout(() => {
+      const insertText = " CRDT";
+      for (let i = 0; i < insertText.length; i++) {
+        const secretPos = createObliviousInt(5 + i);
+        chars.obliviousInsert(secretPos, createObliviousChar(insertText[i]));
+      }
+      log(`After oblivious insert "${insertText}" at secret pos 5: length=${chars.length}`);
+
+      renderArray(chars, output);
+    }, 500);
+
+    // ── Oblivious delete at encrypted position ──────────────────────────
+    // Delete last character ("o") at encrypted position
+
+    setTimeout(() => {
+      const lastIdx = chars.length - 1;
+      const secretPos = createObliviousInt(lastIdx);
+      chars.obliviousDelete(secretPos);
+      log(`After oblivious delete at secret pos ${lastIdx}: length=${chars.length} (unchanged — dummy fill)`);
+
+      renderArray(chars, output);
+
+      status.textContent =
+        `ObliviousArray demo: ${chars.length} elements. ` +
+        `Used obliviousInsert (encrypted position) and obliviousDelete (size unchanged, dummy fill). ` +
+        `Cursor position never exposed to JS.`;
+    }, 1000);
+
+    // ── Securetext editing events (when available) ──────────────────────
+
+    setTimeout(() => {
+      const st = output.querySelector('securetext');
+      if (st && typeof st.addEventListener === 'function') {
+        st.addEventListener('secureinput', (e) => {
+          // e.position = ObliviousByteArray (encrypted index)
+          // e.character = ObliviousByteArray (encrypted char, 2 bytes UTF-16)
+          if (e.position && e.character) {
+            chars.obliviousInsert(e.position, e.character);
+            renderArray(chars, output);
+            log(`secureinput: inserted character at encrypted position`);
+          }
+        });
+
+        st.addEventListener('securedelete', (e) => {
+          if (e.position) {
+            chars.obliviousDelete(e.position);
+            renderArray(chars, output);
+            log(`securedelete: deleted at encrypted position`);
+          }
+        });
+
+        log('Registered securetext editing event listeners');
+      } else {
+        log('securetext editing events not available yet');
+      }
+    }, 1500);
+  </script>
+</body>
+</html>

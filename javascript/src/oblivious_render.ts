@@ -33,11 +33,12 @@ export function renderObliviousText(
     return;
   }
 
-  // Concatenate all character byte arrays into one, stripping validity byte
-  let combined = oc.sliceArray(chars[0], 1, chars[0].length);
+  // Concatenate all character byte arrays INCLUDING validity bytes.
+  // Each char is [validity(1), utf16_lo, utf16_hi] — 3 bytes.
+  // securetext's C++ rendering drops entries where validity == 0.
+  let combined = chars[0];
   for (let i = 1; i < chars.length; i++) {
-    const charData = oc.sliceArray(chars[i], 1, chars[i].length);
-    combined = oc.concatArrays(combined, charData);
+    combined = oc.concatArrays(combined, chars[i]);
   }
 
   // Encrypt and set as securetext value

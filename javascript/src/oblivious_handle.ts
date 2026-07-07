@@ -22,6 +22,9 @@ interface BrowserObliviousArray {
   set(index: number, value: any): void;
   insertAt(index: number, value: any): void;
   deleteAt(index: number): void;
+  obliviousInsert(index: any, value: any): void;
+  obliviousDelete(index: any): void;
+  obliviousEdit(cursor: any, action: any, value: any): void;
 }
 
 type ListBackend = BrowserObliviousArray | any[];
@@ -311,6 +314,36 @@ export class ObliviousHandle {
     const list = this.objects.get(obj)
     if (!list) throw new Error("oblivious: insert target is not a list")
     listInsert(list.data, index as number, value)
+    this._pendingOps++
+  }
+
+  obliviousInsert(obj: string, index: any, value: any): void {
+    const list = this.objects.get(obj)
+    if (!list) throw new Error("oblivious: insert target is not a list")
+    if (!isBrowserArray(list.data)) {
+      throw new Error("oblivious: obliviousInsert requires browser backend")
+    }
+    list.data.obliviousInsert(index, value)
+    this._pendingOps++
+  }
+
+  obliviousDelete(obj: string, index: any): void {
+    const list = this.objects.get(obj)
+    if (!list) throw new Error("oblivious: delete target is not a list")
+    if (!isBrowserArray(list.data)) {
+      throw new Error("oblivious: obliviousDelete requires browser backend")
+    }
+    list.data.obliviousDelete(index)
+    this._pendingOps++
+  }
+
+  obliviousEdit(obj: string, cursor: any, action: any, value: any): void {
+    const list = this.objects.get(obj)
+    if (!list) throw new Error("oblivious: edit target is not a list")
+    if (!isBrowserArray(list.data)) {
+      throw new Error("oblivious: obliviousEdit requires browser backend")
+    }
+    list.data.obliviousEdit(cursor, action, value)
     this._pendingOps++
   }
 

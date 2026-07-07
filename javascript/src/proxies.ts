@@ -575,6 +575,33 @@ function listMethods(target: Target) {
       return this
     },
 
+    obliviousInsertAt(index: any, value: any) {
+      if (typeof context.obliviousInsert === "function") {
+        context.obliviousInsert(objectId, index, value)
+      } else {
+        throw new Error("obliviousInsertAt requires oblivious backend")
+      }
+      return this
+    },
+
+    obliviousDeleteAt(index: any) {
+      if (typeof context.obliviousDelete === "function") {
+        context.obliviousDelete(objectId, index)
+      } else {
+        throw new Error("obliviousDeleteAt requires oblivious backend")
+      }
+      return this
+    },
+
+    obliviousEdit(cursor: any, action: any, value: any) {
+      if (typeof context.obliviousEdit === "function") {
+        context.obliviousEdit(objectId, cursor, action, value)
+      } else {
+        throw new Error("obliviousEdit requires oblivious backend")
+      }
+      return this
+    },
+
     pop() {
       const length = context.length(objectId)
       if (length == 0) {

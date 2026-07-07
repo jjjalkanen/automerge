@@ -352,6 +352,33 @@ var ObliviousHandle = class _ObliviousHandle {
     listInsert(list.data, index, value);
     this._pendingOps++;
   }
+  obliviousInsert(obj, index, value) {
+    const list = this.objects.get(obj);
+    if (!list) throw new Error("oblivious: insert target is not a list");
+    if (!isBrowserArray(list.data)) {
+      throw new Error("oblivious: obliviousInsert requires browser backend");
+    }
+    list.data.obliviousInsert(index, value);
+    this._pendingOps++;
+  }
+  obliviousDelete(obj, index) {
+    const list = this.objects.get(obj);
+    if (!list) throw new Error("oblivious: delete target is not a list");
+    if (!isBrowserArray(list.data)) {
+      throw new Error("oblivious: obliviousDelete requires browser backend");
+    }
+    list.data.obliviousDelete(index);
+    this._pendingOps++;
+  }
+  obliviousEdit(obj, cursor, action, value) {
+    const list = this.objects.get(obj);
+    if (!list) throw new Error("oblivious: edit target is not a list");
+    if (!isBrowserArray(list.data)) {
+      throw new Error("oblivious: obliviousEdit requires browser backend");
+    }
+    list.data.obliviousEdit(cursor, action, value);
+    this._pendingOps++;
+  }
   splice(obj, index, n, _text) {
     const list = this.objects.get(obj);
     if (!list) throw new Error("oblivious: splice target is not a list");
@@ -1055,6 +1082,30 @@ function listMethods(target) {
     },
     insertAt(index, ...values) {
       this.splice(index, 0, ...values);
+      return this;
+    },
+    obliviousInsertAt(index, value) {
+      if (typeof context.obliviousInsert === "function") {
+        context.obliviousInsert(objectId, index, value);
+      } else {
+        throw new Error("obliviousInsertAt requires oblivious backend");
+      }
+      return this;
+    },
+    obliviousDeleteAt(index) {
+      if (typeof context.obliviousDelete === "function") {
+        context.obliviousDelete(objectId, index);
+      } else {
+        throw new Error("obliviousDeleteAt requires oblivious backend");
+      }
+      return this;
+    },
+    obliviousEdit(cursor, action, value) {
+      if (typeof context.obliviousEdit === "function") {
+        context.obliviousEdit(objectId, cursor, action, value);
+      } else {
+        throw new Error("obliviousEdit requires oblivious backend");
+      }
       return this;
     },
     pop() {
@@ -2367,97 +2418,15 @@ function readBundle(bundle) {
   return ApiHandler.readBundle(bundle);
 }
 
-// src/obliv_browser.ts
+// src/oblivious_utils.ts
 var oc;
 function initBrowserBackend(obliviousNamespace) {
   oc = obliviousNamespace;
-  TRUE8 = oc.TRUE;
-  FALSE8 = oc.FALSE;
-}
-function getOc() {
-  if (!oc) {
-    throw new Error(
-      "obliv_browser: call initBrowserBackend(window.oblivious) first"
-    );
-  }
-  return oc;
-}
-var TRUE8;
-var FALSE8;
-function andBool(a, b) {
-  return getOc().andBool(a, b);
-}
-function orBool(a, b) {
-  return getOc().orBool(a, b);
-}
-function notBool(a) {
-  return getOc().notBool(a);
-}
-function eq(a, b) {
-  return getOc().eq(a, b);
-}
-function gt(a, b) {
-  return getOc().lt(b, a);
-}
-function createObliviousBool(v) {
-  return v ? getOc().TRUE : getOc().FALSE;
-}
-function createObliviousInt(n) {
-  const api = getOc();
-  const v = typeof n === "bigint" ? Number(n) : n;
-  const arr = api.createByteArray(5);
-  arr.write(0, api.fromByte(1), api.TRUE);
-  arr.write(1, api.fromByte(v >>> 24 & 255), api.TRUE);
-  arr.write(2, api.fromByte(v >>> 16 & 255), api.TRUE);
-  arr.write(3, api.fromByte(v >>> 8 & 255), api.TRUE);
-  arr.write(4, api.fromByte(v & 255), api.TRUE);
-  return makeSelectable(arr);
-}
-function createObliviousString(s) {
-  const api = getOc();
-  const arr = api.createByteArray(1 + s.length * 2);
-  arr.write(0, api.fromByte(1), api.TRUE);
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    arr.write(1 + i * 2, api.fromByte(code & 255), api.TRUE);
-    arr.write(1 + i * 2 + 1, api.fromByte(code >> 8 & 255), api.TRUE);
-  }
-  return makeSelectable(arr);
-}
-function isValid(value) {
-  const api = getOc();
-  const validityByte = value.read(0);
-  return api.eq(validityByte, api.fromByte(1));
-}
-function eqInt(a, b) {
-  return getOc().eqArray(a, b);
-}
-function gtInt(a, b) {
-  return getOc().ltArray(b, a);
-}
-function eqString(a, b) {
-  const api = getOc();
-  const aVal = api.sliceArray(a, 1, a.length);
-  const bVal = api.sliceArray(b, 1, b.length);
-  return api.eqArray(aVal, bVal);
-}
-function gtString(a, b) {
-  const api = getOc();
-  const aVal = api.sliceArray(a, 1, a.length);
-  const bVal = api.sliceArray(b, 1, b.length);
-  return api.ltArray(bVal, aVal);
-}
-function cmov(cond, ifTrue, ifFalse) {
-  const api = getOc();
-  if (ifTrue !== null && typeof ifTrue === "object" && "length" in ifTrue) {
-    return makeSelectable(api.cmovArray(cond, ifTrue, ifFalse));
-  }
-  return api.cmov(cond, ifTrue, ifFalse);
 }
 function makeSelectable(arr) {
   if (arr && typeof arr === "object" && !arr.oblivSelect) {
     arr.oblivSelect = function(cond, other) {
-      return getOc().cmovArray(cond, this, other);
+      return oc.cmovArray(cond, this, other);
     };
   }
   return arr;
@@ -2469,10 +2438,9 @@ function renderObliviousText(chars, element, oc2) {
     element.value = "";
     return;
   }
-  let combined = oc2.sliceArray(chars[0], 1, chars[0].length);
+  let combined = chars[0];
   for (let i = 1; i < chars.length; i++) {
-    const charData = oc2.sliceArray(chars[i], 1, chars[i].length);
-    combined = oc2.concatArrays(combined, charData);
+    combined = oc2.concatArrays(combined, chars[i]);
   }
   element.value = combined.toBase64();
 }
@@ -2486,7 +2454,6 @@ export {
   Int,
   RawString,
   Uint,
-  andBool,
   applyChanges,
   applyPatch,
   applyPatches,
@@ -2494,10 +2461,6 @@ export {
   change,
   changeAt,
   clone,
-  cmov,
-  createObliviousBool,
-  createObliviousInt,
-  createObliviousString,
   decodeChange,
   decodeSyncMessage,
   decodeSyncState,
@@ -2509,9 +2472,6 @@ export {
   encodeChange,
   encodeSyncMessage,
   encodeSyncState,
-  eq,
-  eqInt,
-  eqString,
   equals,
   free,
   from,
@@ -2530,9 +2490,6 @@ export {
   getLastLocalChange,
   getMissingDeps,
   getObjectId,
-  gt,
-  gtInt,
-  gtString,
   hasHeads,
   hasOurChanges,
   init,
@@ -2546,7 +2503,6 @@ export {
   isCounter,
   isImmutableString,
   isRawString,
-  isValid,
   isWasmInitialized,
   joinBlock,
   load,
@@ -2557,8 +2513,6 @@ export {
   marksAt,
   merge,
   implementation_exports as next,
-  notBool,
-  orBool,
   readBundle,
   receiveSyncMessage,
   releaseInfo,

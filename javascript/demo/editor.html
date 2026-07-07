@@ -12,11 +12,16 @@
     }
     h1 { color: #00d230; }
     #status { color: #888; margin-bottom: 1em; }
-    #output {
-      border: 1px solid #333;
+    #editor {
+      border: 1px solid #555;
       padding: 1em;
       min-height: 3em;
       background: #1a1a1a;
+      cursor: text;
+      outline: none;
+    }
+    #editor:focus {
+      border-color: #00d230;
     }
     securetext {
       display: block;
@@ -25,20 +30,21 @@
     }
     .error { color: #f44; }
     .info { color: #4af; }
+    #hint { color: #666; margin-top: 0.5em; font-size: 13px; }
   </style>
 </head>
 <body>
   <h1>Automerge Oblivious Text Editor</h1>
   <div id="status">Checking window.oblivious...</div>
-  <div id="output"></div>
+  <div id="editor" tabindex="0"></div>
+  <div id="hint">Click the box and type. Arrow keys to move cursor. Backspace to delete.</div>
   <div id="log" class="info" style="margin-top: 1em; font-size: 14px; white-space: pre-wrap;"></div>
 
   <script type="module">
-    // Requires: dom.oblivious.enabled = true, dom.encryptedtext.enabled = true
     import * as Automerge from './automerge-oblivious.js';
 
     const status = document.getElementById('status');
-    const output = document.getElementById('output');
+    const editor = document.getElementById('editor');
     const logEl = document.getElementById('log');
 
     function log(msg) {
@@ -53,92 +59,122 @@
 
     const oc = window.oblivious;
 
+    if (typeof oc.createArray !== 'function') {
+      throw new Error('window.oblivious.createArray not available — rebuild Firefox with ObliviousArray support');
+    }
+
     // ── Wire browser backends ──────────────────────────────────────────
 
     Automerge.initBrowserBackend(oc);
     Automerge.setBrowserBackend(() => oc.createArray());
-    log('Browser backends wired: initBrowserBackend + setBrowserBackend');
+    log('Browser backends wired');
 
-    // ── Helper: render doc.chars to <securetext> ───────────────────────
+    // ── Create document ────────────────────────────────────────────────
 
-    function renderDoc(doc) {
-      output.innerHTML = '';
-      const chars = doc.chars;
-      if (!chars || chars.length === 0) return;
+    const ONE = oc.createInt(1);
+    const ZERO = oc.createInt(0);
+    let cursor = oc.createInt(0);
 
-      Automerge.renderObliviousText(
-        Array.from({ length: chars.length }, (_, i) => chars[i]),
-        output.querySelector('securetext') || (() => {
-          const st = document.createElement('securetext');
-          output.appendChild(st);
-          return st;
-        })(),
-        oc,
-      );
-    }
+    // Standard DOM keyCodes as ObliviousInt constants
+    const KC_BACKSPACE = oc.createInt(8);
+    const KC_DELETE = oc.createInt(46);
+    const KC_LEFT = oc.createInt(37);
+    const KC_RIGHT = oc.createInt(39);
 
-    // ── Create document and insert initial text via Automerge.change ──
-
-    const s = Automerge.createObliviousString;
+    // ObliviousEdit action enum
+    const ACTION_INSERT = oc.createInt(0);
+    const ACTION_BACKSPACE = oc.createInt(1);
+    const ACTION_DELETE = oc.createInt(2);
+    const ACTION_NOOP = oc.createInt(3);
 
     let doc = Automerge.init();
-    log(`Automerge.init() done`);
-
     doc = Automerge.change(doc, d => {
       d.chars = [];
     });
-    log(`Created chars list, length: ${doc.chars.length}`);
 
+    // Insert initial text (sealing boundary — plaintext init is acceptable)
     doc = Automerge.change(doc, d => {
-      const text = 'Hello';
-      for (const ch of text) {
-        d.chars.push(s(ch));
+      for (const ch of 'Hello') {
+        d.chars.push(Automerge.makeSelectable(oc.createString(ch)));
       }
     });
-    log(`After inserting "Hello": length=${doc.chars.length}`);
-    renderDoc(doc);
+    cursor = oc.createInt(doc.chars.length);
+    log(`Initialized with "Hello"`);
 
-    // ── Edit: insert " CRDT" at position 5 ─────────────────────────────
+    // ── Render ─────────────────────────────────────────────────────────
 
-    setTimeout(() => {
+    const secureEl = document.createElement('securetext');
+    editor.appendChild(secureEl);
+
+    function render() {
+      const chars = doc.chars;
+      if (!chars || chars.length === 0) {
+        secureEl.value = '';
+        status.textContent = `Empty document.`;
+        return;
+      }
+
+      const charArrays = Array.from({ length: chars.length }, (_, i) => chars[i]);
+      Automerge.renderObliviousText(charArrays, secureEl, oc);
+      secureEl.setObliviousCursor(cursor);
+
+      status.textContent = `${chars.length} chars`;
+    }
+
+    render();
+
+    // ── Keyboard input ─────────────────────────────────────────────────
+    // All key values arrive as ObliviousByteArrays via SecureKeyboardEvent.
+    // Every keystroke executes identical operations; cmov selects the result.
+
+    secureEl.addEventListener('securekeydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const keyCode = Automerge.makeSelectable(e.keyCode);
+      const key = Automerge.makeSelectable(e.key);
+
+      // Classify key via oblivious integer comparison
+      const isBS = oc.eqInt(keyCode, KC_BACKSPACE);
+      const isDel = oc.eqInt(keyCode, KC_DELETE);
+      const isLeft = oc.eqInt(keyCode, KC_LEFT);
+      const isRight = oc.eqInt(keyCode, KC_RIGHT);
+      const isArrow = oc.orBool(isLeft, isRight);
+      const isControl = oc.orBool(oc.orBool(isBS, isDel), isArrow);
+      const isPrintable = oc.notBool(isControl);
+
+      // Select action as ObliviousInt via chained cmov
+      let action = ACTION_INSERT;
+      action = oc.cmovArray(isBS, ACTION_BACKSPACE, action);
+      action = oc.cmovArray(isDel, ACTION_DELETE, action);
+      action = oc.cmovArray(isArrow, ACTION_NOOP, action);
+
+      // Buffer mutation — single call, branching happens in C++
       doc = Automerge.change(doc, d => {
-        const text = ' CRDT';
-        for (let i = 0; i < text.length; i++) {
-          d.chars.insertAt(5 + i, s(text[i]));
-        }
-      });
-      log(`After inserting " CRDT" at 5: length=${doc.chars.length}`);
-      renderDoc(doc);
-    }, 500);
-
-    // ── Edit: delete last character ─────────────────────────────────────
-
-    setTimeout(() => {
-      doc = Automerge.change(doc, d => {
-        d.chars.deleteAt(d.chars.length - 1, 1);
-      });
-      log(`After deleting last char: length=${doc.chars.length}`);
-      renderDoc(doc);
-    }, 1000);
-
-    // ── Fork and concurrent edit ────────────────────────────────────────
-
-    setTimeout(() => {
-      const fork = Automerge.clone(doc);
-      log(`Forked document, fork length=${fork.chars.length}`);
-
-      doc = Automerge.change(doc, d => {
-        d.chars.insertAt(0, s('!'));
+        d.chars.obliviousEdit(cursor, action, key);
       });
 
-      log(`Original after prepending "!": length=${doc.chars.length}`);
-      renderDoc(doc);
+      // Cursor update — ObliviousInt arithmetic + cmov
+      const dec = oc.subInt(cursor, ONE);
+      const inc = oc.addInt(cursor, ONE);
+      const canDec = oc.gtInt(cursor, ZERO);
+      const canInc = oc.gtInt(oc.createInt(doc.chars.length), cursor);
 
-      status.textContent =
-        `Automerge oblivious demo: ${doc.chars.length} characters. ` +
-        `All edits via Automerge.change() with ObliviousArray backend. ` +
-        `Values have validity bytes; cursor positions stay in C++.`;
-    }, 1500);
+      let newCursor = cursor;
+      newCursor = oc.cmovArray(isBS, oc.cmovArray(canDec, dec, cursor), newCursor);
+      newCursor = oc.cmovArray(isLeft, oc.cmovArray(canDec, dec, cursor), newCursor);
+      newCursor = oc.cmovArray(isRight, oc.cmovArray(canInc, inc, cursor), newCursor);
+      newCursor = oc.cmovArray(isPrintable, inc, newCursor);
+      cursor = newCursor;
+
+      render();
+    });
+
+    // Sync cursor from visual caret position on click.
+    secureEl.addEventListener('click', () => {
+      cursor = Automerge.makeSelectable(secureEl.getSelectionStart());
+    });
+
+    editor.focus();
   </script>
 </body>
 </html>

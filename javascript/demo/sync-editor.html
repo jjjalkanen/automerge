@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Sync Editor</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: monospace;
+      padding: 0.5em;
+      margin: 0;
+    }
+    h2 { color: #00d230; margin: 0.3em 0; font-size: 16px; }
+    #status { color: #888; margin-bottom: 0.5em; font-size: 13px; }
+    #editor {
+      border: 1px solid #555;
+      padding: 0.5em;
+      min-height: 2em;
+      background: #1a1a1a;
+      cursor: text;
+      outline: none;
+    }
+    #editor:focus-within {
+      border-color: #00d230;
+    }
+    securetext {
+      display: block;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+    .error { color: #f44; }
+  </style>
+</head>
+<body>
+  <h2 id="title">Editor</h2>
+  <div id="status">Initializing WASM…</div>
+  <div id="editor" tabindex="0"></div>
+
+  <script type="module">
+    import init, { ObliviousText, setObliviousRef } from './automerge_wasm.js';
+
+    const editorId = new URLSearchParams(location.search).get('id') || '?';
+    document.getElementById('title').textContent = `Editor ${editorId}`;
+
+    const status = document.getElementById('status');
+    const editor = document.getElementById('editor');
+
+    if (!window.oblivious) {
+      status.textContent = 'window.oblivious not available';
+      status.classList.add('error');
+      throw new Error('window.oblivious not available');
+    }
+
+    const oc = window.oblivious;
+
+    try {
+    await init();
+    setObliviousRef(oc);
+
+    const actorId = editorId + '-' + Math.random().toString(36).slice(2, 10);
+    const crdt = new ObliviousText(actorId);
+
+    const secureEl = document.createElement('securetext');
+    editor.appendChild(secureEl);
+
+    let cursor = oc.createInt(0);
+
+    // Only Editor A seeds the initial text; B receives it via sync
+    // so both editors share the same elem_ids.
+    if (editorId === 'A') {
+      const seedOps = [];
+      for (const ch of 'Hello') {
+        const kc = oc.createInt(ch.charCodeAt(0));
+        const result = crdt.obliviousEdit(kc, cursor);
+        cursor = result.newCursor;
+        seedOps.push(...result.ops);
+      }
+      // Defer sync until after event listeners are set up
+      setTimeout(() => sendSync(seedOps), 100);
+    }
+
+    function renderFromBuffer() {
+      try {
+        const buffer = crdt.getRenderBuffer();
+        if (buffer.length === 0) {
+          secureEl.value = '';
+          status.textContent = `Editor ${editorId} — ready`;
+          return;
+        }
+        let combined = buffer[0];
+        for (let i = 1; i < buffer.length; i++) {
+          combined = oc.concatArrays(combined, buffer[i]);
+        }
+        secureEl.value = combined.toBase64();
+        secureEl.setObliviousCursor(cursor);
+        status.textContent = `Editor ${editorId} — ready`;
+      } catch (e) {
+        console.error('[render]', e);
+        status.textContent = `Editor ${editorId} — render error: ${e.message}`;
+      }
+    }
+
+    renderFromBuffer();
+
+    function sendSync(ops) {
+      if (!ops || ops.length === 0) return;
+
+      window.parent.postMessage({
+        from: editorId,
+        crdtOps: ops.map(op => ({
+          type: 'edit',
+          lamport: op.lamport,
+          actor: actorId,
+          elem_id: op.elem_id.toBase64(),
+          predecessor_id: op.predecessor_id.toBase64(),
+          sort_key: op.sort_key.toBase64(),
+          value: op.value.toBase64(),
+          valid: op.valid.toBase64(),
+          target_elem_id: op.target_elem_id.toBase64(),
+          target_valid: op.target_valid.toBase64(),
+          target_value: op.target_value.toBase64(),
+        })),
+      }, '*');
+    }
+
+    function base64ToArrayBuffer(b64) {
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      return buf.buffer;
+    }
+
+    // Keystroke handling — single unified call to CRDT
+    secureEl.addEventListener('securekeydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      try {
+        const result = crdt.obliviousEdit(e.keyCode, cursor);
+        cursor = result.newCursor;
+        secureEl.value = result.content;
+        secureEl.setObliviousCursor(cursor);
+        status.textContent = `Editor ${editorId} — ready`;
+        sendSync(result.ops);
+      } catch (err) {
+        console.error('[obliviousEdit]', err);
+        status.textContent = `Editor ${editorId} — error: ${err.message}`;
+      }
+    });
+
+    secureEl.addEventListener('click', () => {
+      cursor = secureEl.getSelectionStart();
+    });
+
+    // Receive sync from other editor via parent relay
+    window.addEventListener('message', (event) => {
+      const { crdtOps } = event.data || {};
+      if (!crdtOps) return;
+
+      for (const op of crdtOps) {
+        try {
+          crdt.applyRemoteOp(
+            op.lamport,
+            op.actor,
+            oc.fromEncrypted(base64ToArrayBuffer(op.elem_id)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.predecessor_id)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.value)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.sort_key)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.valid)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.target_elem_id)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.target_valid)),
+            oc.fromEncrypted(base64ToArrayBuffer(op.target_value)),
+          );
+        } catch (err) {
+          console.error('[sync receive]', err);
+        }
+      }
+
+      renderFromBuffer();
+    });
+
+    // Expose for E2E testing
+    window._crdt = crdt;
+    window._cursor = cursor;
+    window._oc = oc;
+    window._sendSync = sendSync;
+    window._renderFromBuffer = renderFromBuffer;
+
+    editor.focus();
+    } catch (e) {
+      console.error('[init]', e);
+      status.textContent = `Editor ${editorId} — init error: ${e.message}`;
+      status.classList.add('error');
+    }
+  </script>
+</body>
+</html>

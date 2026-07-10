@@ -46,6 +46,9 @@ use wasm_bindgen::JsCast;
 
 mod export_cache;
 mod interop;
+mod oblivious_dom;
+mod oblivious_sort;
+mod oblivious_text;
 mod sync;
 mod value;
 
@@ -2367,5 +2370,128 @@ pub mod error {
         fn from(e: ReadBundle) -> Self {
             RangeError::new(&e.0).into()
         }
+    }
+}
+
+// ── Oblivious Text CRDT WASM bindings ──────────────────────────────────
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// Pass `window.oblivious` into WASM so the oblivious DOM API is reachable.
+/// Must be called before constructing any `ObliviousText`.
+#[wasm_bindgen(js_name = "setObliviousRef")]
+pub fn set_oblivious_ref(oc: JsValue) {
+    oblivious_dom::set_oblivious_ref(oc);
+}
+
+#[wasm_bindgen]
+pub struct ObliviousText {
+    inner: Rc<RefCell<oblivious_text::ObliviousTextCrdt>>,
+}
+
+#[wasm_bindgen]
+impl ObliviousText {
+    #[wasm_bindgen(constructor)]
+    pub fn new(actor_id: &str) -> Result<ObliviousText, JsValue> {
+        let crdt = oblivious_text::ObliviousTextCrdt::new(actor_id.to_string())?;
+        Ok(ObliviousText {
+            inner: Rc::new(RefCell::new(crdt)),
+        })
+    }
+
+    #[wasm_bindgen(js_name = "applyRemoteOp")]
+    pub fn apply_remote_op(
+        &self,
+        lamport: u32,
+        actor: &str,
+        elem_id: &JsValue,
+        predecessor_id: &JsValue,
+        value: &JsValue,
+        sort_key: &JsValue,
+        valid: &JsValue,
+        target_elem_id: &JsValue,
+        target_valid: &JsValue,
+        target_value: &JsValue,
+    ) -> Result<(), JsValue> {
+        let eid = oblivious_dom::wrap_handle(elem_id);
+        let pid = oblivious_dom::wrap_handle(predecessor_id);
+        let v = oblivious_dom::wrap_handle(value);
+        let sk = oblivious_dom::wrap_handle(sort_key);
+        let vl = oblivious_dom::wrap_handle(valid);
+        let teid = oblivious_dom::wrap_handle(target_elem_id);
+        let tv = oblivious_dom::wrap_handle(target_valid);
+        let tvl = oblivious_dom::wrap_handle(target_value);
+        self.inner.borrow_mut().apply_remote_op(
+            lamport as u64, actor, &eid, &pid, &v, &sk, &vl, &teid, &tv, &tvl,
+        )
+    }
+
+    #[wasm_bindgen(js_name = "getRenderBuffer")]
+    pub fn get_render_buffer(&self) -> Result<Array, JsValue> {
+        let buffer = self.inner.borrow().get_render_buffer()?;
+        let arr = Array::new_with_length(buffer.len() as u32);
+        for (i, val) in buffer.iter().enumerate() {
+            arr.set(i as u32, oblivious_dom::unwrap_handle(val));
+        }
+        Ok(arr)
+    }
+
+    #[wasm_bindgen(js_name = "materialize")]
+    pub fn materialize(&self) -> Result<(), JsValue> {
+        self.inner.borrow_mut().materialize()
+    }
+
+    #[wasm_bindgen(js_name = "getActorId")]
+    pub fn get_actor_id(&self) -> String {
+        self.inner.borrow().actor_id.clone()
+    }
+
+    #[wasm_bindgen(js_name = "getLamport")]
+    pub fn get_lamport(&self) -> u32 {
+        self.inner.borrow().lamport_counter as u32
+    }
+
+    #[wasm_bindgen(js_name = "obliviousEdit")]
+    pub fn oblivious_edit(&self, key_code: &JsValue, cursor: &JsValue) -> Result<Object, JsValue> {
+        let kc = oblivious_dom::wrap_handle(key_code);
+        let c = oblivious_dom::wrap_handle(cursor);
+        let result = self.inner.borrow_mut().oblivious_edit(&kc, &c)?;
+
+        let obj = Object::new();
+        js_set(&obj, "newCursor", &oblivious_dom::unwrap_handle(&result.new_cursor))?;
+        js_set(&obj, "content", &JsValue::from_str(&result.content_base64))?;
+
+        let ops = Array::new();
+        let op_obj = Object::new();
+        js_set(&op_obj, "type", &JsValue::from_str("edit"))?;
+        js_set(&op_obj, "lamport", &JsValue::from(result.op.lamport as u32))?;
+        js_set(&op_obj, "elem_id", &oblivious_dom::unwrap_handle(&result.op.elem_id))?;
+        js_set(&op_obj, "predecessor_id", &oblivious_dom::unwrap_handle(&result.op.predecessor_id))?;
+        js_set(&op_obj, "sort_key", &oblivious_dom::unwrap_handle(&result.op.sort_key))?;
+        js_set(&op_obj, "value", &oblivious_dom::unwrap_handle(&result.op.value))?;
+        // Convert ObliviousBool → ObliviousByteArray so JS can call .toBase64()
+        let true_ba = oblivious_dom::create_byte_array(&[1])?;
+        let false_ba = oblivious_dom::create_byte_array(&[0])?;
+        let valid_ba = oblivious_dom::cmov_array(&result.op.valid, &true_ba, &false_ba)?;
+        js_set(&op_obj, "valid", &oblivious_dom::unwrap_handle(&valid_ba))?;
+        js_set(&op_obj, "target_elem_id", &oblivious_dom::unwrap_handle(&result.op.target_elem_id))?;
+        let target_valid_ba = oblivious_dom::cmov_array(&result.op.target_valid, &true_ba, &false_ba)?;
+        js_set(&op_obj, "target_valid", &oblivious_dom::unwrap_handle(&target_valid_ba))?;
+        js_set(&op_obj, "target_value", &oblivious_dom::unwrap_handle(&result.op.target_value))?;
+        ops.push(&op_obj);
+
+        js_set(&obj, "ops", &ops)?;
+        Ok(obj)
+    }
+
+    #[wasm_bindgen(js_name = "debugCleartext")]
+    pub fn debug_cleartext(&self) -> Result<String, JsValue> {
+        self.inner.borrow().debug_cleartext()
+    }
+
+    #[wasm_bindgen(js_name = "lastError")]
+    pub fn last_error(&self) -> String {
+        oblivious_dom::last_error()
     }
 }

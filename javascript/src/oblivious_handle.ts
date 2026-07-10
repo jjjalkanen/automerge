@@ -14,6 +14,11 @@
  * passthrough, treating encrypted values as opaque JS objects.
  */
 import { STATE, OBJECT_ID } from "./constants.js"
+import {
+  encodeSyncMessage,
+  decodeSyncMessage,
+  hexEncode,
+} from "./oblivious_sync_codec.js"
 
 // Browser ObliviousArray — opaque DOM object from window.oblivious.createArray()
 interface BrowserObliviousArray {
@@ -45,6 +50,38 @@ function createListBackend(): ListBackend {
 
 function isBrowserArray(backend: ListBackend): backend is BrowserObliviousArray {
   return arrayFactory !== null && !Array.isArray(backend);
+}
+
+export type ObliviousValueSerializer = {
+  serialize(value: any): string
+  deserialize(data: string): any
+  createInt(n: number): any
+}
+
+let valueSerializer: ObliviousValueSerializer | null = null
+
+export function setSerializer(s: ObliviousValueSerializer): void {
+  valueSerializer = s
+}
+
+export class ObliviousSyncState {
+  lastSentHeads: Uint8Array[] = []
+  sentHashes: Set<string> = new Set()
+  theirHeads: Uint8Array[] | undefined
+  free(): void {}
+}
+
+function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+function headsEqual(a: Uint8Array[], b: Uint8Array[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((h, i) => arraysEqual(h, b[i]))
 }
 
 function listGet(backend: ListBackend, index: number): any {
@@ -105,12 +142,71 @@ export class ObliviousHandle {
   private _pendingOps = 0
   private _freezeEnabled = false
 
+  private changeLog: { hash: Uint8Array; encoded: Uint8Array }[] = []
+  private changeSeq = 0
+  private currentHeads: Uint8Array[] = []
+
   constructor(actorId: string) {
     this.actorId = actorId
   }
 
   private allocId(): string {
     return `${this.nextObjId++}@${this.actorId}`
+  }
+
+  private makeChangeId(seq: number): Uint8Array {
+    const id = new Uint8Array(32)
+    const seqBytes = new TextEncoder().encode(`${seq}:${this.actorId}`)
+    id.set(seqBytes.slice(0, 32))
+    return id
+  }
+
+  private resolvePathForObj(objId: string): string {
+    for (const [key, val] of this.store) {
+      if (val === objId) return key
+    }
+    return objId
+  }
+
+  private resolveObjForPath(path: string): string | undefined {
+    const val = this.store.get(path)
+    if (val && this.objects.has(val)) return val
+    return undefined
+  }
+
+  private recordChange(obj: string, _cursor: any, action: any, value: any): void {
+    if (!valueSerializer) return
+    const seq = ++this.changeSeq
+    const packed = JSON.stringify({
+      action: valueSerializer.serialize(action),
+      value: valueSerializer.serialize(value),
+    })
+    const changeData = new TextEncoder().encode(
+      JSON.stringify({
+        actor: this.actorId,
+        seq,
+        startOp: seq,
+        time: 0,
+        message: null,
+        deps: this.currentHeads.map(h => hexEncode(h)),
+        hash: hexEncode(this.makeChangeId(seq)),
+        ops: [
+          {
+            action: "obliviousEdit",
+            obj: this.resolvePathForObj(obj),
+            key: "",
+            elemId: null,
+            value: packed,
+            datatype: "bytes",
+            pred: [],
+            insert: true,
+          },
+        ],
+      }),
+    )
+    const hash = this.makeChangeId(seq)
+    this.changeLog.push({ hash, encoded: changeData })
+    this.currentHeads = [hash]
   }
 
   // ── Core map / list ops ───────────────────────────────────────────────────
@@ -345,6 +441,7 @@ export class ObliviousHandle {
     }
     list.data.obliviousEdit(cursor, action, value)
     this._pendingOps++
+    this.recordChange(obj, cursor, action, value)
   }
 
   splice(obj: string, index: any, n: number, _text?: string): void {
@@ -370,7 +467,71 @@ export class ObliviousHandle {
     throw new Error("oblivious: cursor not supported")
   }
 
-  // ── Stubs for sync / history (not needed in oblivious mode) ───────────────
+  // ── Sync ───────────────────────────────────────────────────────────────────
+
+  generateSyncMessage(syncState: ObliviousSyncState): Uint8Array | null {
+    const unsent = this.changeLog.filter(
+      c => !syncState.sentHashes.has(hexEncode(c.hash)),
+    )
+
+    if (
+      unsent.length === 0 &&
+      headsEqual(syncState.lastSentHeads, this.currentHeads)
+    ) {
+      return null
+    }
+
+    for (const c of unsent) {
+      syncState.sentHashes.add(hexEncode(c.hash))
+    }
+    syncState.lastSentHeads = [...this.currentHeads]
+
+    return encodeSyncMessage({
+      heads: this.currentHeads,
+      need: [],
+      have: [],
+      changes: unsent.map(c => c.encoded),
+    })
+  }
+
+  receiveSyncMessage(syncState: ObliviousSyncState, message: Uint8Array): void {
+    const msg = decodeSyncMessage(message)
+
+    for (const changeBytes of msg.changes) {
+      const change = JSON.parse(new TextDecoder().decode(changeBytes))
+      for (const op of change.ops) {
+        if (op.action === "obliviousEdit" && valueSerializer) {
+          const objId = this.resolveObjForPath(op.obj)
+          if (!objId) continue
+          const list = this.objects.get(objId)
+          if (list && isBrowserArray(list.data)) {
+            const packed = JSON.parse(op.value)
+            const action = valueSerializer.deserialize(packed.action)
+            const value = valueSerializer.deserialize(packed.value)
+            const cursor = valueSerializer.createInt(listLength(list.data))
+            list.data.obliviousEdit(cursor, action, value)
+          }
+        }
+      }
+      const hash = new Uint8Array(32)
+      const idBytes = new TextEncoder().encode(`${change.actor}:${change.seq}`)
+      hash.set(idBytes.slice(0, 32))
+      this.changeLog.push({ hash, encoded: changeBytes })
+    }
+
+    syncState.theirHeads = msg.heads
+    this.currentHeads = [...msg.heads]
+    this.version++
+  }
+
+  hasOurChanges(syncState: ObliviousSyncState): boolean {
+    if (!syncState.theirHeads) return false
+    return this.currentHeads.every(h =>
+      syncState.theirHeads!.some(th => arraysEqual(h, th)),
+    )
+  }
+
+  // ── Stubs for history (not needed in oblivious mode) ──────────────────────
 
   getChanges(_heads: any): any[] {
     return []
@@ -413,26 +574,47 @@ export const ObliviousApi = {
   decodeChange(): never {
     throw new Error("oblivious: not implemented")
   },
-  initSyncState(): never {
-    throw new Error("oblivious: not implemented")
+  initSyncState(): ObliviousSyncState {
+    return new ObliviousSyncState()
   },
-  encodeSyncMessage(): never {
-    throw new Error("oblivious: not implemented")
+  encodeSyncMessage(msg: any): Uint8Array {
+    return encodeSyncMessage(msg)
   },
-  decodeSyncMessage(): never {
-    throw new Error("oblivious: not implemented")
+  decodeSyncMessage(data: Uint8Array): any {
+    return decodeSyncMessage(data)
   },
-  encodeSyncState(): never {
-    throw new Error("oblivious: not implemented")
+  encodeSyncState(): Uint8Array {
+    return new Uint8Array(0)
   },
-  decodeSyncState(): never {
-    throw new Error("oblivious: not implemented")
+  decodeSyncState(): ObliviousSyncState {
+    return new ObliviousSyncState()
   },
-  exportSyncState(): never {
-    throw new Error("oblivious: not implemented")
+  exportSyncState(state: any): any {
+    if (state instanceof ObliviousSyncState) {
+      return {
+        sharedHeads: (state.theirHeads || []).map(hexEncode),
+        lastSentHeads: state.lastSentHeads.map(hexEncode),
+        theirHeads: state.theirHeads?.map(hexEncode),
+        theirHeed: undefined,
+        theirHave: undefined,
+        sentHashes: [...state.sentHashes],
+        _internal: {
+          lastSentHeads: state.lastSentHeads,
+          sentHashes: state.sentHashes,
+          theirHeads: state.theirHeads,
+        },
+      }
+    }
+    return state
   },
-  importSyncState(): never {
-    throw new Error("oblivious: not implemented")
+  importSyncState(state: any): ObliviousSyncState {
+    const s = new ObliviousSyncState()
+    if (state._internal) {
+      s.lastSentHeads = state._internal.lastSentHeads || []
+      s.sentHashes = state._internal.sentHashes || new Set()
+      s.theirHeads = state._internal.theirHeads
+    }
+    return s
   },
   readBundle(): never {
     throw new Error("oblivious: not implemented")

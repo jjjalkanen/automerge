@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Automerge Oblivious Sync Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      color: #eee;
+      font-family: monospace;
+      margin: 0;
+      padding: 1em;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h1 { color: #00d230; margin: 0 0 0.5em; font-size: 20px; }
+    #container {
+      display: flex;
+      flex: 1;
+      gap: 1em;
+      min-height: 0;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel.left, .panel.right {
+      flex: 35;
+    }
+    .panel.center {
+      flex: 30;
+    }
+    .panel h2 {
+      color: #888;
+      font-size: 13px;
+      margin: 0 0 0.5em;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    iframe {
+      flex: 1;
+      border: 1px solid #333;
+      background: #111;
+      min-height: 0;
+    }
+    #log {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid #333;
+      background: #0d0d0d;
+      padding: 0.5em;
+      font-size: 12px;
+      min-height: 0;
+    }
+    .log-entry {
+      margin-bottom: 0.8em;
+      padding: 0.4em 0.5em;
+      border-left: 3px solid #333;
+    }
+    .log-entry.a-to-b { border-left-color: #4af; }
+    .log-entry.b-to-a { border-left-color: #f4a; }
+    .log-header {
+      color: #aaa;
+      margin-bottom: 0.3em;
+    }
+    .log-header .direction { font-weight: bold; }
+    .log-field {
+      color: #666;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    .log-field .label { color: #888; }
+    .log-field .value { color: #a0ffa0; }
+    #hint {
+      color: #555;
+      font-size: 12px;
+      margin-top: 0.5em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Automerge Oblivious Sync Demo (WASM CRDT)</h1>
+  <div id="container">
+    <div class="panel left">
+      <h2>Editor A</h2>
+      <iframe id="editorA" src="sync-editor.html?id=A"></iframe>
+    </div>
+    <div class="panel center">
+      <h2>Sync Log (CRDT ops)</h2>
+      <div id="log"></div>
+    </div>
+    <div class="panel right">
+      <h2>Editor B</h2>
+      <iframe id="editorB" src="sync-editor.html?id=B"></iframe>
+    </div>
+  </div>
+  <div id="hint">Type in either editor. Edits sync via encrypted CRDT operations shown in the center log.</div>
+
+  <script>
+    const editorA = document.getElementById('editorA');
+    const editorB = document.getElementById('editorB');
+    const log = document.getElementById('log');
+    let msgCount = 0;
+
+    function truncate(s, n) {
+      return s.length > n ? s.slice(0, n) + '…' : s;
+    }
+
+    function appendLog(from, crdtOps) {
+      msgCount++;
+      const to = from === 'A' ? 'B' : 'A';
+      const cls = from === 'A' ? 'a-to-b' : 'b-to-a';
+
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${cls}`;
+
+      let opsHtml = '';
+      for (const op of crdtOps) {
+        opsHtml += `<div class="log-field"><span class="label">type:</span> ${op.type}</div>`;
+        opsHtml += `<div class="log-field"><span class="label">lamport:</span> ${op.lamport}</div>`;
+        if (op.elem_id) {
+          opsHtml += `<div class="log-field"><span class="label">elem_id:</span> <span class="value">${truncate(op.elem_id, 32)}</span></div>`;
+        }
+        if (op.predecessor_id) {
+          opsHtml += `<div class="log-field"><span class="label">pred_id:</span> <span class="value">${truncate(op.predecessor_id, 32)}</span></div>`;
+        }
+        if (op.target_elem_id) {
+          opsHtml += `<div class="log-field"><span class="label">target:</span> <span class="value">${truncate(op.target_elem_id, 32)}</span></div>`;
+        }
+        if (op.value) {
+          opsHtml += `<div class="log-field"><span class="label">value:</span> <span class="value">${truncate(op.value, 32)}</span></div>`;
+        }
+        if (op.sort_key) {
+          opsHtml += `<div class="log-field"><span class="label">sort_key:</span> <span class="value">${truncate(op.sort_key, 32)}</span></div>`;
+        }
+      }
+
+      entry.innerHTML =
+        `<div class="log-header"><span class="direction">#${msgCount} ${from} → ${to}</span> (${crdtOps.length} ops)</div>` +
+        opsHtml;
+
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    window.addEventListener('message', (event) => {
+      const { from, crdtOps } = event.data || {};
+      if (!from || !crdtOps) return;
+
+      appendLog(from, crdtOps);
+
+      // Relay to the other editor
+      const target = from === 'A' ? editorB : editorA;
+      target.contentWindow.postMessage({ crdtOps }, '*');
+    });
+  </script>
+</body>
+</html>

@@ -7,9 +7,12 @@ import { ObliviousApi, setBrowserBackend } from "../oblivious_handle.js"
 UseApi(ObliviousApi as any)
 
 export * from "../index.js"
-export { setBrowserBackend } from "../oblivious_handle.js"
+export { setBrowserBackend, setSerializer, type ObliviousValueSerializer } from "../oblivious_handle.js"
 export {
   initBrowserBackend,
   makeSelectable,
 } from "../oblivious_utils.js"
 export { renderObliviousText } from "../oblivious_render.js"
+export {
+  decodeSyncMessage as decodeSyncMessageRaw,
+} from "../oblivious_sync_codec.js"

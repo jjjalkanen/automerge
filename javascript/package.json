@@ -77,6 +77,7 @@
     "test:oblivious": "ts-mocha --loader=ts-node/esm --experimental-specifier-resolution=node --type-check -p tsconfig.oblivious.json test/oblivious_doc_test.ts",
     "test:oblivious-handle": "npx tsx --test test/oblivious_handle_test.ts",
     "test:oblivious-text": "npx tsx --test test/oblivious_text_test.ts",
+    "test:e2e": "node test/e2e_sync_test.js",
     "build:demo": "npx esbuild src/entrypoints/oblivious_browser.ts --bundle --format=esm --outfile=demo/automerge-oblivious.js --platform=browser --external:crypto"
   },
   "dependencies": {
@@ -94,8 +95,10 @@
     "fast-sha256": "^1.3.0",
     "mocha": "^11.4.0",
     "pako": "^2.1.0",
+    "playwright-core": "^1.61.1",
     "prettier": "3.8.1",
     "puppeteer": "^24.9.0",
+    "selenium-webdriver": "^4.45.0",
     "serve-handler": "^6.1.5",
     "ts-mocha": "^11.1.0",
     "ts-node": "^10.9.1",

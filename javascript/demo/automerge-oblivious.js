@@ -103,6 +103,109 @@ var F64 = /* @__PURE__ */ Symbol.for("_am_f64");
 var COUNTER = /* @__PURE__ */ Symbol.for("_am_counter");
 var IMMUTABLE_STRING = /* @__PURE__ */ Symbol.for("_am_immutableString");
 
+// src/oblivious_sync_codec.ts
+var MESSAGE_TYPE_V1 = 66;
+function encodeLEB128(value) {
+  const bytes = [];
+  do {
+    let byte = value & 127;
+    value >>>= 7;
+    if (value !== 0) byte |= 128;
+    bytes.push(byte);
+  } while (value !== 0);
+  return bytes;
+}
+function decodeLEB128(data, offset) {
+  let result = 0;
+  let shift = 0;
+  let pos = offset;
+  while (pos < data.length) {
+    const byte = data[pos];
+    result |= (byte & 127) << shift;
+    pos++;
+    if ((byte & 128) === 0) break;
+    shift += 7;
+  }
+  return [result, pos];
+}
+function encodeSyncMessage(msg) {
+  const parts = [MESSAGE_TYPE_V1];
+  parts.push(...encodeLEB128(msg.heads.length));
+  for (const hash of msg.heads) {
+    for (let i = 0; i < hash.length; i++) parts.push(hash[i]);
+  }
+  parts.push(...encodeLEB128(msg.need.length));
+  for (const hash of msg.need) {
+    for (let i = 0; i < hash.length; i++) parts.push(hash[i]);
+  }
+  parts.push(...encodeLEB128(msg.have.length));
+  for (const have of msg.have) {
+    parts.push(...encodeLEB128(have.lastSync.length));
+    for (const hash of have.lastSync) {
+      for (let i = 0; i < hash.length; i++) parts.push(hash[i]);
+    }
+    parts.push(...encodeLEB128(have.bloom.length));
+    for (let i = 0; i < have.bloom.length; i++) parts.push(have.bloom[i]);
+  }
+  parts.push(...encodeLEB128(msg.changes.length));
+  for (const change2 of msg.changes) {
+    parts.push(...encodeLEB128(change2.length));
+    for (let i = 0; i < change2.length; i++) parts.push(change2[i]);
+  }
+  return new Uint8Array(parts);
+}
+function decodeSyncMessage(data) {
+  let pos = 0;
+  const msgType = data[pos++];
+  if (msgType !== MESSAGE_TYPE_V1) {
+    throw new Error(`unknown sync message type: 0x${msgType.toString(16)}`);
+  }
+  let count;
+  [count, pos] = decodeLEB128(data, pos);
+  const heads = [];
+  for (let i = 0; i < count; i++) {
+    heads.push(data.slice(pos, pos + 32));
+    pos += 32;
+  }
+  ;
+  [count, pos] = decodeLEB128(data, pos);
+  const need = [];
+  for (let i = 0; i < count; i++) {
+    need.push(data.slice(pos, pos + 32));
+    pos += 32;
+  }
+  ;
+  [count, pos] = decodeLEB128(data, pos);
+  const have = [];
+  for (let i = 0; i < count; i++) {
+    let syncCount;
+    [syncCount, pos] = decodeLEB128(data, pos);
+    const lastSync = [];
+    for (let j = 0; j < syncCount; j++) {
+      lastSync.push(data.slice(pos, pos + 32));
+      pos += 32;
+    }
+    let bloomLen;
+    [bloomLen, pos] = decodeLEB128(data, pos);
+    const bloom = data.slice(pos, pos + bloomLen);
+    pos += bloomLen;
+    have.push({ lastSync, bloom });
+  }
+  ;
+  [count, pos] = decodeLEB128(data, pos);
+  const changes = [];
+  for (let i = 0; i < count; i++) {
+    let changeLen;
+    [changeLen, pos] = decodeLEB128(data, pos);
+    changes.push(data.slice(pos, pos + changeLen));
+    pos += changeLen;
+  }
+  return { heads, need, have, changes };
+}
+function hexEncode(data) {
+  return Array.from(data).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 // src/oblivious_handle.ts
 var arrayFactory = null;
 function setBrowserBackend(createArray) {
@@ -113,6 +216,29 @@ function createListBackend() {
 }
 function isBrowserArray(backend) {
   return arrayFactory !== null && !Array.isArray(backend);
+}
+var valueSerializer = null;
+function setSerializer(s) {
+  valueSerializer = s;
+}
+var ObliviousSyncState = class {
+  constructor() {
+    this.lastSentHeads = [];
+    this.sentHashes = /* @__PURE__ */ new Set();
+  }
+  free() {
+  }
+};
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+function headsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  return a.every((h, i) => arraysEqual(h, b[i]));
 }
 function listGet(backend, index) {
   if (isBrowserArray(backend)) return backend.get(index);
@@ -167,10 +293,65 @@ var ObliviousHandle = class _ObliviousHandle {
     this.version = 0;
     this._pendingOps = 0;
     this._freezeEnabled = false;
+    this.changeLog = [];
+    this.changeSeq = 0;
+    this.currentHeads = [];
     this.actorId = actorId;
   }
   allocId() {
     return `${this.nextObjId++}@${this.actorId}`;
+  }
+  makeChangeId(seq) {
+    const id = new Uint8Array(32);
+    const seqBytes = new TextEncoder().encode(`${seq}:${this.actorId}`);
+    id.set(seqBytes.slice(0, 32));
+    return id;
+  }
+  resolvePathForObj(objId) {
+    for (const [key, val] of this.store) {
+      if (val === objId) return key;
+    }
+    return objId;
+  }
+  resolveObjForPath(path) {
+    const val = this.store.get(path);
+    if (val && this.objects.has(val)) return val;
+    return void 0;
+  }
+  recordChange(obj, _cursor, action, value) {
+    if (!valueSerializer) return;
+    console.log("[sync] recordChange called, changeLog.length before:", this.changeLog.length);
+    const seq = ++this.changeSeq;
+    const packed = JSON.stringify({
+      action: valueSerializer.serialize(action),
+      value: valueSerializer.serialize(value)
+    });
+    const changeData = new TextEncoder().encode(
+      JSON.stringify({
+        actor: this.actorId,
+        seq,
+        startOp: seq,
+        time: 0,
+        message: null,
+        deps: this.currentHeads.map((h) => hexEncode(h)),
+        hash: hexEncode(this.makeChangeId(seq)),
+        ops: [
+          {
+            action: "obliviousEdit",
+            obj: this.resolvePathForObj(obj),
+            key: "",
+            elemId: null,
+            value: packed,
+            datatype: "bytes",
+            pred: [],
+            insert: true
+          }
+        ]
+      })
+    );
+    const hash = this.makeChangeId(seq);
+    this.changeLog.push({ hash, encoded: changeData });
+    this.currentHeads = [hash];
   }
   // ── Core map / list ops ───────────────────────────────────────────────────
   put(obj, prop, value, _datatype) {
@@ -378,6 +559,7 @@ var ObliviousHandle = class _ObliviousHandle {
     }
     list.data.obliviousEdit(cursor, action, value);
     this._pendingOps++;
+    this.recordChange(obj, cursor, action, value);
   }
   splice(obj, index, n, _text) {
     const list = this.objects.get(obj);
@@ -398,7 +580,62 @@ var ObliviousHandle = class _ObliviousHandle {
   getCursorPosition(_obj2, _cursor) {
     throw new Error("oblivious: cursor not supported");
   }
-  // ── Stubs for sync / history (not needed in oblivious mode) ───────────────
+  // ── Sync ───────────────────────────────────────────────────────────────────
+  generateSyncMessage(syncState) {
+    console.log("[sync] generateSyncMessage: changeLog.length=", this.changeLog.length, "sentHashes.size=", syncState.sentHashes.size);
+    const unsent = this.changeLog.filter(
+      (c) => !syncState.sentHashes.has(hexEncode(c.hash))
+    );
+    console.log("[sync] unsent.length=", unsent.length, "headsEqual=", headsEqual(syncState.lastSentHeads, this.currentHeads));
+    if (unsent.length === 0 && headsEqual(syncState.lastSentHeads, this.currentHeads)) {
+      console.log("[sync] returning null \u2014 nothing to send");
+      return null;
+    }
+    for (const c of unsent) {
+      syncState.sentHashes.add(hexEncode(c.hash));
+    }
+    syncState.lastSentHeads = [...this.currentHeads];
+    return encodeSyncMessage({
+      heads: this.currentHeads,
+      need: [],
+      have: [],
+      changes: unsent.map((c) => c.encoded)
+    });
+  }
+  receiveSyncMessage(syncState, message) {
+    const msg = decodeSyncMessage(message);
+    for (const changeBytes of msg.changes) {
+      const change2 = JSON.parse(new TextDecoder().decode(changeBytes));
+      for (const op of change2.ops) {
+        if (op.action === "obliviousEdit" && valueSerializer) {
+          const objId = this.resolveObjForPath(op.obj);
+          if (!objId) continue;
+          const list = this.objects.get(objId);
+          if (list && isBrowserArray(list.data)) {
+            const packed = JSON.parse(op.value);
+            const action = valueSerializer.deserialize(packed.action);
+            const value = valueSerializer.deserialize(packed.value);
+            const cursor = valueSerializer.createInt(listLength(list.data));
+            list.data.obliviousEdit(cursor, action, value);
+          }
+        }
+      }
+      const hash = new Uint8Array(32);
+      const idBytes = new TextEncoder().encode(`${change2.actor}:${change2.seq}`);
+      hash.set(idBytes.slice(0, 32));
+      this.changeLog.push({ hash, encoded: changeBytes });
+    }
+    syncState.theirHeads = msg.heads;
+    this.currentHeads = [...msg.heads];
+    this.version++;
+  }
+  hasOurChanges(syncState) {
+    if (!syncState.theirHeads) return false;
+    return this.currentHeads.every(
+      (h) => syncState.theirHeads.some((th) => arraysEqual(h, th))
+    );
+  }
+  // ── Stubs for history (not needed in oblivious mode) ──────────────────────
   getChanges(_heads) {
     return [];
   }
@@ -432,25 +669,46 @@ var ObliviousApi = {
     throw new Error("oblivious: not implemented");
   },
   initSyncState() {
-    throw new Error("oblivious: not implemented");
+    return new ObliviousSyncState();
   },
-  encodeSyncMessage() {
-    throw new Error("oblivious: not implemented");
+  encodeSyncMessage(msg) {
+    return encodeSyncMessage(msg);
   },
-  decodeSyncMessage() {
-    throw new Error("oblivious: not implemented");
+  decodeSyncMessage(data) {
+    return decodeSyncMessage(data);
   },
   encodeSyncState() {
-    throw new Error("oblivious: not implemented");
+    return new Uint8Array(0);
   },
   decodeSyncState() {
-    throw new Error("oblivious: not implemented");
+    return new ObliviousSyncState();
   },
-  exportSyncState() {
-    throw new Error("oblivious: not implemented");
+  exportSyncState(state) {
+    if (state instanceof ObliviousSyncState) {
+      return {
+        sharedHeads: (state.theirHeads || []).map(hexEncode),
+        lastSentHeads: state.lastSentHeads.map(hexEncode),
+        theirHeads: state.theirHeads?.map(hexEncode),
+        theirHeed: void 0,
+        theirHave: void 0,
+        sentHashes: [...state.sentHashes],
+        _internal: {
+          lastSentHeads: state.lastSentHeads,
+          sentHashes: state.sentHashes,
+          theirHeads: state.theirHeads
+        }
+      };
+    }
+    return state;
   },
-  importSyncState() {
-    throw new Error("oblivious: not implemented");
+  importSyncState(state) {
+    const s = new ObliviousSyncState();
+    if (state._internal) {
+      s.lastSentHeads = state._internal.lastSentHeads || [];
+      s.sentHashes = state._internal.sentHashes || /* @__PURE__ */ new Set();
+      s.theirHeads = state._internal.theirHeads;
+    }
+    return s;
   },
   readBundle() {
     throw new Error("oblivious: not implemented");
@@ -477,7 +735,7 @@ __export(implementation_exports, {
   changeAt: () => changeAt,
   clone: () => clone,
   decodeChange: () => decodeChange,
-  decodeSyncMessage: () => decodeSyncMessage,
+  decodeSyncMessage: () => decodeSyncMessage2,
   decodeSyncState: () => decodeSyncState,
   deleteAt: () => deleteAt,
   diff: () => diff,
@@ -485,7 +743,7 @@ __export(implementation_exports, {
   dump: () => dump,
   emptyChange: () => emptyChange,
   encodeChange: () => encodeChange,
-  encodeSyncMessage: () => encodeSyncMessage,
+  encodeSyncMessage: () => encodeSyncMessage2,
   encodeSyncState: () => encodeSyncState,
   equals: () => equals,
   free: () => free,
@@ -1817,7 +2075,7 @@ function _change(doc, source, options, callback, scope) {
     throw new RangeError("Calls to Automerge.change cannot be nested");
   }
   let heads = state.handle.getHeads();
-  if (scope && headsEqual(scope, heads)) {
+  if (scope && headsEqual2(scope, heads)) {
     scope = void 0;
   }
   if (scope) {
@@ -2048,7 +2306,7 @@ function diffPath(doc, path, before, after, opts) {
   const objPath = absoluteObjPath(doc, path, "diff");
   return state.handle.diffPath(objPath, before, after, opts);
 }
-function headsEqual(heads1, heads2) {
+function headsEqual2(heads1, heads2) {
   if (heads1.length !== heads2.length) {
     return false;
   }
@@ -2135,10 +2393,10 @@ function encodeChange(change2) {
 function decodeChange(data) {
   return ApiHandler.decodeChange(data);
 }
-function encodeSyncMessage(message) {
+function encodeSyncMessage2(message) {
   return ApiHandler.encodeSyncMessage(message);
 }
-function decodeSyncMessage(message) {
+function decodeSyncMessage2(message) {
   return ApiHandler.decodeSyncMessage(message);
 }
 function getMissingDeps(doc, heads) {
@@ -2462,7 +2720,8 @@ export {
   changeAt,
   clone,
   decodeChange,
-  decodeSyncMessage,
+  decodeSyncMessage2 as decodeSyncMessage,
+  decodeSyncMessage as decodeSyncMessageRaw,
   decodeSyncState,
   deleteAt,
   diff,
@@ -2470,7 +2729,7 @@ export {
   dump,
   emptyChange,
   encodeChange,
-  encodeSyncMessage,
+  encodeSyncMessage2 as encodeSyncMessage,
   encodeSyncState,
   equals,
   free,
@@ -2522,6 +2781,7 @@ export {
   saveIncremental,
   saveSince,
   setBrowserBackend,
+  setSerializer,
   spans,
   splice,
   splitBlock,

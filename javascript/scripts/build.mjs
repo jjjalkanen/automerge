@@ -310,6 +310,35 @@ function copyAndFixupWasm(wasmBuildTarball, gitHead) {
     path.join(nodeOutputPath, "automerge_wasm.d.ts"),
     path.join(jsProjectDir, "src", "wasm_types.d.ts"),
   )
+
+  const dtsFiles = [
+    path.join(jsProjectDir, "src", "wasm_types.d.ts"),
+    path.join(jsProjectDir, "src", "wasm_bindgen_output", "bundler", "automerge_wasm.d.ts"),
+    path.join(jsProjectDir, "src", "wasm_bindgen_output", "web", "automerge_wasm.d.ts"),
+    path.join(jsProjectDir, "src", "wasm_bindgen_output", "workerd", "automerge_wasm.d.ts"),
+    path.join(jsProjectDir, "src", "wasm_bindgen_output", "nodejs", "automerge_wasm.d.ts"),
+  ]
+  for (const dtsPath of dtsFiles) {
+    let content = fs.readFileSync(dtsPath, "utf8")
+    content = content.replace(
+      '| "list";',
+      '| "list"\n| "oblivious";',
+    )
+    content = content.replace(
+      '| ["table", ObjID];',
+      '| ["table", ObjID]\n| ["oblivious", any];',
+    )
+    content = content.replace(
+      '| ["table", ObjID];',
+      '| ["table", ObjID]\n| ["oblivious", any, ObjID];',
+    )
+    content = content.replace(
+      "insert(obj: ObjID, index: number, value: Value, datatype?: Datatype): void;",
+      "insert(obj: ObjID, index: number, value: Value, datatype?: Datatype): void;\n\n    obliviousInsert(obj: ObjID, index: any, value: any): void;\n    obliviousDelete(obj: ObjID, index: any): void;\n    obliviousEdit(obj: ObjID, cursor: any, action: any, value: any): void;",
+    )
+    fs.writeFileSync(dtsPath, content)
+  }
+  console.log("patched .d.ts files with oblivious types")
 }
 
 function compileTypescript() {

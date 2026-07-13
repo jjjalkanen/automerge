@@ -1,4 +1,5 @@
 /* @ts-self-types="./automerge_wasm.d.ts" */
+import { oc_enc_safe } from './snippets/automerge-wasm-a5acc53b12cef014/inline0.js';
 
 export class Automerge {
     static __wrap(ptr) {
@@ -900,6 +901,15 @@ export class ObliviousText {
         }
     }
     /**
+     * @param {SyncState} state
+     * @returns {any}
+     */
+    generateSyncMessage(state) {
+        _assertClass(state, SyncState);
+        const ret = wasm.oblivioustext_generateSyncMessage(this.__wbg_ptr, state.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @returns {string}
      */
     getActorId() {
@@ -977,6 +987,17 @@ export class ObliviousText {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {SyncState} state
+     * @param {Uint8Array} message
+     */
+    receiveSyncMessage(state, message) {
+        _assertClass(state, SyncState);
+        const ret = wasm.oblivioustext_receiveSyncMessage(this.__wbg_ptr, state.__wbg_ptr, message);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
 }
 if (Symbol.dispose) ObliviousText.prototype[Symbol.dispose] = ObliviousText.prototype.free;
@@ -1314,6 +1335,10 @@ function __wbg_get_imports() {
             const ret = Object.assign(arg0, arg1);
             return ret;
         },
+        __wbg_buffer_26d0910f3a5bc899: function(arg0) {
+            const ret = arg0.buffer;
+            return ret;
+        },
         __wbg_call_389efe28435a9388: function() { return handleError(function (arg0, arg1) {
             const ret = arg0.call(arg1);
             return ret;
@@ -1498,6 +1523,10 @@ function __wbg_get_imports() {
             const ret = arg0.next;
             return ret;
         },
+        __wbg_oc_enc_safe_a5eb1f54dc7f6d6d: function() { return handleError(function (arg0) {
+            const ret = oc_enc_safe(arg0);
+            return ret;
+        }, arguments); },
         __wbg_ownKeys_c7100fb5fa376c6f: function() { return handleError(function (arg0) {
             const ret = Reflect.ownKeys(arg0);
             return ret;

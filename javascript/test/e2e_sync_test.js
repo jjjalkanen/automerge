@@ -14,8 +14,6 @@ import { execSync } from 'node:child_process';
 import { Builder, Key } from 'selenium-webdriver';
 import firefox from 'selenium-webdriver/firefox.js';
 
-const BUILD_DIR = '/firefox/metadata_unicode/obj-ff-opt';
-const FIREFOX_PATH = `${BUILD_DIR}/dist/bin/firefox`;
 const DEMO_DIR = path.resolve(import.meta.dirname, '..', 'demo');
 const TIMEOUT = 30_000;
 
@@ -26,17 +24,49 @@ const MIME_TYPES = {
   '.css': 'text/css',
 };
 
-function findGeckodriver() {
-  const candidates = [
-    `${BUILD_DIR}/dist/bin/geckodriver`,
-    `${BUILD_DIR}/x86_64-unknown-linux-gnu/release/geckodriver`,
-  ];
-  for (const p of candidates) {
+function findOnPath(name) {
+  try {
+    return execSync(`which ${name}`, { encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function findBuildDir() {
+  const home = process.env.HOME || '/home/' + process.env.USER;
+  const candidates = fs.readdirSync(path.join(home, 'firefox'))
+    .filter(d => d.startsWith('obj-'))
+    .map(d => path.join(home, 'firefox', d));
+  return candidates[0] || null;
+}
+
+function findFirefox() {
+  if (process.env.FIREFOX_BINARY) return process.env.FIREFOX_BINARY;
+  const buildDir = findBuildDir();
+  if (buildDir) {
+    const p = path.join(buildDir, 'dist', 'bin', 'firefox');
     if (fs.existsSync(p)) return p;
   }
-  const found = execSync(`find ${BUILD_DIR} -name geckodriver -type f 2>/dev/null`, { encoding: 'utf8' }).trim().split('\n')[0];
-  if (found) return found;
-  throw new Error(`geckodriver not found in ${BUILD_DIR} — rebuild with --enable-geckodriver`);
+  const onPath = findOnPath('firefox');
+  if (onPath) return onPath;
+  throw new Error('firefox not found — set FIREFOX_BINARY or build in ~/firefox');
+}
+
+function findGeckodriver() {
+  if (process.env.GECKODRIVER) return process.env.GECKODRIVER;
+  const buildDir = findBuildDir();
+  if (buildDir) {
+    const candidates = [
+      path.join(buildDir, 'dist', 'bin', 'geckodriver'),
+      path.join(buildDir, 'x86_64-unknown-linux-gnu', 'release', 'geckodriver'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  const onPath = findOnPath('geckodriver');
+  if (onPath) return onPath;
+  throw new Error('geckodriver not found — set GECKODRIVER or build with --enable-geckodriver');
 }
 
 function startServer() {
@@ -96,7 +126,17 @@ async function getDebugText(driver, iframeId) {
   await driver.switchTo().defaultContent();
   const iframe = await driver.findElement({ id: iframeId });
   await driver.switchTo().frame(iframe);
-  const text = await driver.executeScript('return window._crdt.debugCleartext()');
+  const text = await driver.executeScript(`
+    try {
+      const buf = window._crdt.getRenderBuffer();
+      const parts = [];
+      for (let i = 0; i < buf.length; i++) {
+        try { parts.push(buf[i].toBase64()); }
+        catch (e) { parts.push('ERR'); }
+      }
+      return parts.join(',');
+    } catch (e) { throw new Error(e.message || String(e)); }
+  `);
   await driver.switchTo().defaultContent();
   return text;
 }
@@ -110,9 +150,14 @@ async function hasDebugRevealSupport(driver, iframeId) {
   await driver.switchTo().defaultContent();
   const iframe = await driver.findElement({ id: iframeId });
   await driver.switchTo().frame(iframe);
-  const result = await driver.executeScript(
-    'return typeof window._oc.createInt(0).debugReveal === "function"'
-  );
+  const result = await driver.executeScript(`
+    try {
+      const v = window._oc.createInt(65);
+      if (typeof v.debugReveal !== 'function') return false;
+      v.debugReveal();
+      return true;
+    } catch { return false; }
+  `);
   await driver.switchTo().defaultContent();
   return result;
 }
@@ -213,7 +258,9 @@ async function collectBrowserLogs(driver) {
 async function run() {
   console.log('Oblivious Text CRDT — E2E Sync Test\n');
 
+  const firefoxPath = findFirefox();
   const geckodriverPath = findGeckodriver();
+  console.log(`Using Firefox: ${firefoxPath}`);
   console.log(`Using geckodriver: ${geckodriverPath}`);
 
   console.log('Starting file server...');
@@ -224,7 +271,7 @@ async function run() {
   try {
     console.log('Launching Firefox via geckodriver...');
     const options = new firefox.Options()
-      .setBinary(FIREFOX_PATH)
+      .setBinary(firefoxPath)
       .addArguments('-headless')
       .setPreference('dom.oblivious.enabled', true)
       .setPreference('toolkit.startup.max_resumed_crashes', -1)
@@ -271,6 +318,60 @@ async function run() {
       console.log(`\n  Startup errors:`);
       startupErrors.forEach(e => console.log(`    ${e.message}`));
     }
+
+    // Diagnostic: check browser console for errors before proceeding
+    await sleep(2000);
+    try {
+      const conLogs = await collectBrowserLogs(driver);
+      const severes = conLogs.filter(l => l.level === 'SEVERE');
+      if (severes.length > 0) {
+        console.log('  Browser errors detected before element count check:');
+        severes.forEach(e => console.log(`    ${e.message}`));
+      }
+    } catch {}
+
+    // Check if WASM calls work at all from test context
+    await driver.switchTo().defaultContent();
+    const afrDiag = await driver.findElement({ id: 'editorA' });
+    await driver.switchTo().frame(afrDiag);
+    const diagResult = await driver.executeScript(`
+      try {
+        const buf = window._crdt.getRenderBuffer();
+        let info = 'getRenderBuffer OK, length=' + buf.length;
+        for (let i = 0; i < buf.length; i++) {
+          try {
+            const b64 = buf[i].toBase64();
+            info += ' [' + i + ':OK:' + b64.length + ']';
+          } catch (e) {
+            info += ' [' + i + ':ERR:' + (e.message || e) + ']';
+          }
+        }
+        return info;
+      } catch (e) {
+        return 'getRenderBuffer FAILED: ' + (e.message || String(e));
+      }
+    `);
+    await driver.switchTo().defaultContent();
+    console.log(`  Diagnostic: ${diagResult}`);
+
+    // Check B's WASM state before element count
+    await driver.switchTo().defaultContent();
+    const bfrDiag = await driver.findElement({ id: 'editorB' });
+    await driver.switchTo().frame(bfrDiag);
+    const diagB = await driver.executeScript(`
+      try {
+        const buf = window._crdt.getRenderBuffer();
+        return 'B getRenderBuffer OK, length=' + buf.length;
+      } catch (e) {
+        return 'B getRenderBuffer FAILED: ' + (e.message || String(e));
+      }
+    `);
+    await driver.switchTo().defaultContent();
+    console.log(`  Diagnostic B: ${diagB}`);
+
+    // Check B's status for error details
+    const bStatus = await getStatusText(driver, 'editorB');
+    console.log(`  Editor B status: ${bStatus}`);
 
     // Editor A seeds "Hello" and syncs to B — wait for B to receive
     await waitForElementCount(driver, 'editorA', 5, 'Editor A seed');

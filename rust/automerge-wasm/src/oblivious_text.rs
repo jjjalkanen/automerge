@@ -12,12 +12,148 @@
 //!   - Int fields (index, type, weight, etc.): 5 bytes (validity + big-endian i32)
 //!   - Bool fields (tombstone, is_down, etc.): 1 byte (ObliviousBool)
 
+use std::collections::{BTreeSet, HashSet};
+
+use automerge as am;
+use am::sync::{BloomFilter, Have, SyncDoc};
+use am::ChangeHash;
 use wasm_bindgen::prelude::*;
 
 use crate::oblivious_dom;
 use crate::oblivious_sort::{bitonic_sort, pad_to_power_of_2, SortEntry};
 
 const ID_SIZE: u32 = 32;
+
+// ── Sync support ────────────────────────────────────────────────────
+
+#[derive(Clone, Debug)]
+struct StoredOp {
+    lamport: u64,
+    actor: String,
+    elem_id: JsValue,
+    predecessor_id: JsValue,
+    sort_key: JsValue,
+    value: JsValue,
+    valid: JsValue,
+    target_elem_id: JsValue,
+    target_valid: JsValue,
+    target_value: JsValue,
+}
+
+#[derive(Clone, Debug)]
+struct StoredChange {
+    hash: ChangeHash,
+    deps: Vec<ChangeHash>,
+    op: StoredOp,
+}
+
+fn make_change_hash(seq: u64, actor: &str) -> ChangeHash {
+    let mut bytes = [0u8; 32];
+    let id_str = format!("{}:{}", seq, actor);
+    let id_bytes = id_str.as_bytes();
+    let n = id_bytes.len().min(32);
+    bytes[..n].copy_from_slice(&id_bytes[..n]);
+    ChangeHash(bytes)
+}
+
+fn base64_decode(s: &str) -> Vec<u8> {
+    fn val(c: u8) -> u8 {
+        match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => 0,
+        }
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    let mut i = 0;
+    while i + 3 < bytes.len() {
+        let (a, b, c, d) = (val(bytes[i]), val(bytes[i + 1]), val(bytes[i + 2]), val(bytes[i + 3]));
+        out.push((a << 2) | (b >> 4));
+        if bytes[i + 2] != b'=' {
+            out.push((b << 4) | (c >> 2));
+        }
+        if bytes[i + 3] != b'=' {
+            out.push((c << 6) | d);
+        }
+        i += 4;
+    }
+    out
+}
+
+fn oblivious_to_bytes(handle: &JsValue) -> Result<Vec<u8>, JsValue> {
+    let b64 = oblivious_dom::to_base64(handle)?;
+    Ok(base64_decode(&b64))
+}
+
+fn bytes_to_oblivious(data: &[u8]) -> Result<JsValue, JsValue> {
+    let arr = js_sys::Uint8Array::from(data);
+    let buffer = arr.buffer();
+    oblivious_dom::from_encrypted(&buffer.into())
+}
+
+// AEAD overhead: 12-byte nonce + 4-byte padding + 16-byte Poly1305 tag
+const AEAD_OVERHEAD: usize = 32;
+const ENC_32: usize = 32 + AEAD_OVERHEAD; // elem_id, predecessor_id, sort_key, target_elem_id
+const ENC_5: usize = 5 + AEAD_OVERHEAD;   // value, target_value
+const ENC_1: usize = 1 + AEAD_OVERHEAD;   // valid, target_valid
+const ENC_OBLIVIOUS_TOTAL: usize = 4 * ENC_32 + 2 * ENC_5 + 2 * ENC_1;
+
+fn serialize_op(op: &StoredOp) -> Result<Vec<u8>, JsValue> {
+    let mut buf = Vec::with_capacity(ENC_OBLIVIOUS_TOTAL + 64);
+    buf.extend_from_slice(&op.lamport.to_be_bytes());
+    let actor_bytes = op.actor.as_bytes();
+    buf.push(actor_bytes.len() as u8);
+    buf.extend_from_slice(actor_bytes);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.elem_id)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.predecessor_id)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.sort_key)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.value)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.valid)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.target_elem_id)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.target_valid)?);
+    buf.extend_from_slice(&oblivious_to_bytes(&op.target_value)?);
+    Ok(buf)
+}
+
+fn deserialize_op(data: &[u8]) -> Result<StoredOp, JsValue> {
+    if data.len() < 9 {
+        return Err("change too short".into());
+    }
+    let mut pos = 0;
+    let lamport = u64::from_be_bytes(data[pos..pos + 8].try_into().unwrap());
+    pos += 8;
+    let actor_len = data[pos] as usize;
+    pos += 1;
+    if pos + actor_len > data.len() {
+        return Err("actor length exceeds data".into());
+    }
+    let actor = String::from_utf8(data[pos..pos + actor_len].to_vec())
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    pos += actor_len;
+
+    let remaining = data.len() - pos;
+    if remaining < ENC_OBLIVIOUS_TOTAL {
+        return Err(format!("not enough oblivious data: {} bytes, need {}", remaining, ENC_OBLIVIOUS_TOTAL).into());
+    }
+
+    let elem_id = bytes_to_oblivious(&data[pos..pos + ENC_32])?; pos += ENC_32;
+    let predecessor_id = bytes_to_oblivious(&data[pos..pos + ENC_32])?; pos += ENC_32;
+    let sort_key = bytes_to_oblivious(&data[pos..pos + ENC_32])?; pos += ENC_32;
+    let value = bytes_to_oblivious(&data[pos..pos + ENC_5])?; pos += ENC_5;
+    let valid = bytes_to_oblivious(&data[pos..pos + ENC_1])?; pos += ENC_1;
+    let target_elem_id = bytes_to_oblivious(&data[pos..pos + ENC_32])?; pos += ENC_32;
+    let target_valid = bytes_to_oblivious(&data[pos..pos + ENC_1])?; pos += ENC_1;
+    let target_value = bytes_to_oblivious(&data[pos..pos + ENC_5])?;
+
+    Ok(StoredOp {
+        lamport, actor, elem_id, predecessor_id, sort_key, value, valid,
+        target_elem_id, target_valid, target_value,
+    })
+}
 const INT_SIZE: u32 = 5;
 
 // ── Cleartext structure (never enters cmov/sort) ─────────────────────
@@ -68,6 +204,14 @@ pub struct ObliviousTextCrdt {
     pub position_map: Vec<(JsValue, JsValue)>,
     /// Oblivious visible count (ObliviousInt). Set by materialize/extract_positions.
     pub oblivious_visible_count: JsValue,
+    /// Append-only change log for sync protocol.
+    pub change_log: Vec<StoredChange>,
+    /// Fast hash lookup.
+    pub change_hashes: HashSet<ChangeHash>,
+    /// Current document heads.
+    pub current_heads: Vec<ChangeHash>,
+    /// Monotonic change sequence counter.
+    pub change_seq: u64,
 }
 
 impl ObliviousTextCrdt {
@@ -88,6 +232,10 @@ impl ObliviousTextCrdt {
             one,
             position_map: Vec::new(),
             oblivious_visible_count,
+            change_log: Vec::new(),
+            change_hashes: HashSet::new(),
+            current_heads: Vec::new(),
+            change_seq: 0,
         })
     }
 
@@ -1060,11 +1208,113 @@ impl ObliviousTextCrdt {
             target_value,
         };
 
+        // Record change for sync protocol
+        // Convert ObliviousBool fields to ObliviousByteArray for serialization
+        let true_ba = oblivious_dom::create_byte_array(&[1])?;
+        let false_ba = oblivious_dom::create_byte_array(&[0])?;
+        let valid_ba = oblivious_dom::cmov_array(&op.valid, &true_ba, &false_ba)?;
+        let target_valid_ba = oblivious_dom::cmov_array(&op.target_valid, &true_ba, &false_ba)?;
+
+        self.change_seq += 1;
+        let hash = make_change_hash(self.change_seq, &self.actor_id);
+        let stored_op = StoredOp {
+            lamport: op.lamport,
+            actor: self.actor_id.clone(),
+            elem_id: op.elem_id.clone(),
+            predecessor_id: op.predecessor_id.clone(),
+            sort_key: op.sort_key.clone(),
+            value: op.value.clone(),
+            valid: valid_ba,
+            target_elem_id: op.target_elem_id.clone(),
+            target_valid: target_valid_ba,
+            target_value: op.target_value.clone(),
+        };
+        self.change_log.push(StoredChange {
+            hash,
+            deps: self.current_heads.clone(),
+            op: stored_op,
+        });
+        self.change_hashes.insert(hash);
+        self.current_heads = vec![hash];
+
         Ok(EditResult {
             new_cursor,
             op,
             content_base64,
         })
+    }
+
+    // ── Sync helpers ─────────────────────────────────────────────────
+
+    fn get_hashes_since(&self, since: &[ChangeHash]) -> Vec<ChangeHash> {
+        if since.is_empty() {
+            return self.change_log.iter().map(|c| c.hash).collect();
+        }
+        let since_set: HashSet<_> = since.iter().collect();
+        let mut start = 0;
+        for (i, c) in self.change_log.iter().enumerate().rev() {
+            if since_set.contains(&c.hash) {
+                start = i + 1;
+                break;
+            }
+        }
+        self.change_log[start..].iter().map(|c| c.hash).collect()
+    }
+
+    fn get_changes_by_hashes(&self, hashes: &[ChangeHash]) -> Result<Vec<Vec<u8>>, JsValue> {
+        let hash_set: HashSet<_> = hashes.iter().collect();
+        let mut result = Vec::new();
+        for c in &self.change_log {
+            if hash_set.contains(&c.hash) {
+                result.push(serialize_op(&c.op)?);
+            }
+        }
+        Ok(result)
+    }
+
+    fn apply_sync_change(&mut self, data: &[u8]) -> Result<ChangeHash, JsValue> {
+        let op = deserialize_op(data)?;
+        self.apply_remote_op(
+            op.lamport,
+            &op.actor,
+            &op.elem_id,
+            &op.predecessor_id,
+            &op.value,
+            &op.sort_key,
+            &op.valid,
+            &op.target_elem_id,
+            &op.target_valid,
+            &op.target_value,
+        )?;
+
+        self.change_seq += 1;
+        let hash = make_change_hash(self.change_seq, &op.actor);
+        self.change_log.push(StoredChange {
+            hash,
+            deps: self.current_heads.clone(),
+            op,
+        });
+        self.change_hashes.insert(hash);
+        self.current_heads = vec![hash];
+        Ok(hash)
+    }
+
+    fn filter_sent_hashes(&self, their_heads: &[ChangeHash], sent_hashes: &mut BTreeSet<ChangeHash>) {
+        if their_heads.is_empty() || sent_hashes.is_empty() {
+            return;
+        }
+        let their_set: HashSet<_> = their_heads.iter().collect();
+        let mut cutoff = None;
+        for (i, c) in self.change_log.iter().enumerate().rev() {
+            if their_set.contains(&c.hash) {
+                cutoff = Some(i);
+                break;
+            }
+        }
+        if let Some(cutoff) = cutoff {
+            let ancestors: HashSet<_> = self.change_log[..=cutoff].iter().map(|c| c.hash).collect();
+            sent_hashes.retain(|h| !ancestors.contains(h));
+        }
     }
 
     // ── Debug API (temporary) ────────────────────────────────────────
@@ -1078,6 +1328,191 @@ impl ObliviousTextCrdt {
         Ok(parts.join(","))
     }
 
+}
+
+// ── SyncDoc implementation ──────────────────────────────────────────
+
+impl SyncDoc for ObliviousTextCrdt {
+    fn generate_sync_message(&self, sync_state: &mut am::sync::State) -> Option<am::sync::Message> {
+        let our_heads = self.current_heads.clone();
+
+        let our_need: Vec<ChangeHash> = sync_state
+            .their_heads
+            .as_ref()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter(|h| !self.change_hashes.contains(h))
+            .copied()
+            .collect();
+
+        let their_heads_set: HashSet<_> = sync_state
+            .their_heads
+            .as_ref()
+            .map(|h| h.iter().collect())
+            .unwrap_or_default();
+        let our_have = if our_need.iter().all(|h| their_heads_set.contains(h)) {
+            let hashes = self.get_hashes_since(&sync_state.shared_heads);
+            vec![Have {
+                last_sync: sync_state.shared_heads.clone(),
+                bloom: BloomFilter::from_hashes(hashes.iter()),
+            }]
+        } else {
+            Vec::new()
+        };
+
+        // Compute hashes to send
+        let hashes_to_send = if let (Some(their_have), Some(their_need)) =
+            (&sync_state.their_have, &sync_state.their_need)
+        {
+            let their_have = their_have.as_slice();
+            let their_need = their_need.as_slice();
+            let mut to_send: Vec<ChangeHash> = Vec::new();
+
+            if their_have.is_empty() {
+                to_send.extend_from_slice(their_need);
+            } else {
+                let mut last_sync_hashes = Vec::new();
+                let mut bloom_filters = Vec::new();
+                for h in their_have {
+                    last_sync_hashes.extend(&h.last_sync);
+                    bloom_filters.push(&h.bloom);
+                }
+
+                let hashes = self.get_hashes_since(&last_sync_hashes);
+                for hash in &hashes {
+                    if bloom_filters.iter().all(|b| !b.contains_hash(hash)) {
+                        to_send.push(*hash);
+                    }
+                }
+                // With a linear log, dependents of any hash are all later hashes.
+                // If any hash is not in bloom, include all hashes from that point.
+                if !to_send.is_empty() {
+                    let first_missing = hashes.iter().position(|h| to_send.contains(h)).unwrap_or(0);
+                    to_send = hashes[first_missing..].to_vec();
+                }
+                for h in their_need {
+                    if !to_send.contains(h) {
+                        to_send.push(*h);
+                    }
+                }
+            }
+            to_send
+                .into_iter()
+                .filter(|h| !sync_state.sent_hashes.contains(h))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        let changes_data = self.get_changes_by_hashes(&hashes_to_send).ok()?;
+
+        let heads_unchanged = sync_state.last_sent_heads == our_heads;
+        let heads_equal = sync_state.their_heads.as_ref() == Some(&our_heads);
+
+        if heads_unchanged && sync_state.have_responded {
+            if heads_equal && changes_data.is_empty() {
+                return None;
+            }
+            if sync_state.in_flight {
+                return None;
+            }
+        }
+
+        sync_state.have_responded = true;
+        sync_state.last_sent_heads.clone_from(&our_heads);
+        sync_state.sent_hashes.extend(hashes_to_send);
+        sync_state.in_flight = true;
+
+        Some(am::sync::Message {
+            heads: our_heads,
+            need: our_need,
+            have: our_have,
+            changes: changes_data.into(),
+            supported_capabilities: None,
+            version: am::sync::MessageVersion::V1,
+        })
+    }
+
+    fn receive_sync_message(
+        &mut self,
+        sync_state: &mut am::sync::State,
+        message: am::sync::Message,
+    ) -> Result<(), am::AutomergeError> {
+        self.receive_sync_message_log_patches(sync_state, message, &mut am::PatchLog::inactive())
+    }
+
+    fn receive_sync_message_log_patches(
+        &mut self,
+        sync_state: &mut am::sync::State,
+        message: am::sync::Message,
+        _patch_log: &mut am::PatchLog,
+    ) -> Result<(), am::AutomergeError> {
+        sync_state.in_flight = false;
+        let before_heads: HashSet<ChangeHash> = self.current_heads.iter().copied().collect();
+
+        let am::sync::Message {
+            heads: message_heads,
+            changes: message_changes,
+            need: message_need,
+            have: message_have,
+            ..
+        } = message;
+
+        if !message_changes.is_empty() {
+            for change_bytes in message_changes.iter() {
+                self.apply_sync_change(change_bytes)
+                    .map_err(|e| {
+                        let msg = e.as_string().unwrap_or_else(|| "unknown".to_string());
+                        am::AutomergeError::InvalidChangeHashBytes(
+                            am::InvalidChangeHashSlice(msg.into_bytes())
+                        )
+                    })?;
+            }
+
+            let new_heads: HashSet<_> = self.current_heads.iter().copied().collect();
+            let new_in_new: Vec<_> = new_heads.iter().filter(|h| !before_heads.contains(h)).copied().collect();
+            let common: Vec<_> = sync_state.shared_heads.iter()
+                .filter(|h| new_heads.contains(h)).copied().collect();
+            let mut advanced: HashSet<_> = HashSet::new();
+            for h in new_in_new.into_iter().chain(common) {
+                advanced.insert(h);
+            }
+            sync_state.shared_heads = {
+                let mut v: Vec<_> = advanced.into_iter().collect();
+                v.sort();
+                v
+            };
+        }
+
+        self.filter_sent_hashes(&message_heads, &mut sync_state.sent_hashes);
+
+        if message_changes.is_empty() && message_heads == self.current_heads {
+            sync_state.last_sent_heads.clone_from(&message_heads);
+        }
+
+        let all_known = message_heads.iter().all(|h| self.change_hashes.contains(h));
+        if all_known {
+            sync_state.shared_heads.clone_from(&message_heads);
+            if message_heads.is_empty() {
+                sync_state.last_sent_heads = Default::default();
+                sync_state.sent_hashes = Default::default();
+            }
+        } else {
+            let known: Vec<_> = message_heads.iter().filter(|h| self.change_hashes.contains(h)).copied().collect();
+            let mut merged: HashSet<_> = sync_state.shared_heads.iter().copied().chain(known).collect();
+            sync_state.shared_heads = {
+                let mut v: Vec<_> = merged.drain().collect();
+                v.sort();
+                v
+            };
+        }
+
+        sync_state.their_have = Some(message_have);
+        sync_state.their_heads = Some(message_heads);
+        sync_state.their_need = Some(message_need);
+
+        Ok(())
+    }
 }
 
 // ── Internal types ───────────────────────────────────────────────────

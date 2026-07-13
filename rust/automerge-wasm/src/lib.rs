@@ -2485,6 +2485,36 @@ impl ObliviousText {
         Ok(obj)
     }
 
+    #[wasm_bindgen(js_name = "generateSyncMessage")]
+    pub fn generate_sync_message(&self, state: &mut SyncState) -> JsValue {
+        use am::sync::SyncDoc;
+        let crdt = self.inner.borrow();
+        match crdt.generate_sync_message(&mut state.0) {
+            Some(message) => {
+                let encoded = message.encode();
+                let arr = js_sys::Uint8Array::from(encoded.as_slice());
+                arr.into()
+            }
+            None => JsValue::NULL,
+        }
+    }
+
+    #[wasm_bindgen(js_name = "receiveSyncMessage")]
+    pub fn receive_sync_message(
+        &self,
+        state: &mut SyncState,
+        message: js_sys::Uint8Array,
+    ) -> Result<(), JsValue> {
+        use am::sync::SyncDoc;
+        let data = message.to_vec();
+        let msg = am::sync::Message::decode(&data)
+            .map_err(|e| JsValue::from_str(&format!("decode sync message: {}", e)))?;
+        self.inner
+            .borrow_mut()
+            .receive_sync_message(&mut state.0, msg)
+            .map_err(|e| JsValue::from_str(&format!("receive sync message: {}", e)))
+    }
+
     #[wasm_bindgen(js_name = "debugCleartext")]
     pub fn debug_cleartext(&self) -> Result<String, JsValue> {
         self.inner.borrow().debug_cleartext()

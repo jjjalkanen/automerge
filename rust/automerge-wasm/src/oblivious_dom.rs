@@ -40,6 +40,7 @@ export function oc_cmov(c, t, f) { C('cmov',[c,t,f]); return S(_oc.cmovArray(G(c
 export function oc_cmov_bool(c, t, f) { C('cmov_bool',[c,t,f]); return S(_oc.cmovBool(G(c), G(t), G(f))); }
 export function oc_b64(i) { C('b64',[i]); return G(i).toBase64(); }
 export function oc_enc(buf) { return S(_oc.fromEncrypted(buf)); }
+export function oc_enc_safe(buf) { try { return S(_oc.fromEncrypted(buf)); } catch(e) { _lastErr = 'fromEncrypted: ' + (e.message||e) + ' bufType=' + (buf && buf.constructor && buf.constructor.name) + ' bufLen=' + (buf && buf.byteLength); throw e; } }
 export function oc_unwrap(i) { C('unwrap',[i]); return G(i); }
 export function oc_wrap(o) { return S(o); }
 export function oc_debug_str(i) { C('debug_str',[i]); return G(i).toBase64(); }
@@ -68,6 +69,8 @@ extern "C" {
     fn oc_cmov_bool(c: JsValue, t: JsValue, f: JsValue) -> JsValue;
     fn oc_b64(i: JsValue) -> JsValue;
     fn oc_enc(buf: &JsValue) -> JsValue;
+    #[wasm_bindgen(catch)]
+    fn oc_enc_safe(buf: &JsValue) -> Result<JsValue, JsValue>;
     fn oc_unwrap(i: JsValue) -> JsValue;
     fn oc_wrap(o: &JsValue) -> JsValue;
     fn oc_debug_str(i: JsValue) -> JsValue;
@@ -176,7 +179,10 @@ pub fn to_base64(val: &JsValue) -> Result<String, JsValue> {
 }
 
 pub fn from_encrypted(buffer: &JsValue) -> Result<JsValue, JsValue> {
-    Ok(oc_enc(buffer))
+    oc_enc_safe(buffer).map_err(|e| {
+        let err_str = last_error();
+        JsValue::from_str(&format!("from_encrypted failed: {}", err_str))
+    })
 }
 
 // ── Debug (temporary) ──────────────────────────────────────────────

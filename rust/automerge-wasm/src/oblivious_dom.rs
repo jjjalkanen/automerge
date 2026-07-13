@@ -44,6 +44,8 @@ export function oc_enc_safe(buf) { try { return S(_oc.fromEncrypted(buf)); } cat
 export function oc_unwrap(i) { C('unwrap',[i]); return G(i); }
 export function oc_wrap(o) { return S(o); }
 export function oc_debug_str(i) { C('debug_str',[i]); return G(i).toBase64(); }
+export function oc_ba_length(i) { C('ba_length',[i]); return G(i).length; }
+export function oc_bitonic_sort(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
 ")]
 extern "C" {
     fn oc_set(r: &JsValue);
@@ -74,6 +76,8 @@ extern "C" {
     fn oc_unwrap(i: JsValue) -> JsValue;
     fn oc_wrap(o: &JsValue) -> JsValue;
     fn oc_debug_str(i: JsValue) -> JsValue;
+    fn oc_ba_length(i: JsValue) -> JsValue;
+    fn oc_bitonic_sort(ids: &JsValue, key_size: u32);
     fn oc_last_err() -> JsValue;
 }
 
@@ -186,6 +190,14 @@ pub fn from_encrypted(buffer: &JsValue) -> Result<JsValue, JsValue> {
 }
 
 // ── Debug (temporary) ──────────────────────────────────────────────
+
+pub fn ba_length(val: &JsValue) -> u32 {
+    oc_ba_length(hv(val)).as_f64().unwrap_or(0.0) as u32
+}
+
+pub fn bitonic_sort_native(entries: &JsValue, key_size: u32) {
+    oc_bitonic_sort(entries, key_size);
+}
 
 pub fn debug_string(val: &JsValue) -> Result<String, JsValue> {
     let result = oc_debug_str(hv(val));

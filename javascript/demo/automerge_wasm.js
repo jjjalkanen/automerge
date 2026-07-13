@@ -1,7 +1,16 @@
 /* @ts-self-types="./automerge_wasm.d.ts" */
-import { oc_enc_safe } from './snippets/automerge-wasm-a5acc53b12cef014/inline0.js';
+
+//#region js imports
+import { oc_bitonic_sort, oc_enc_safe } from './snippets/automerge-wasm-a5acc53b12cef014/inline0.js';
+
+//#endregion
+
+//#region exports
 
 export class Automerge {
+    constructor() {
+        throw new Error('cannot invoke `new` directly');
+    }
     static __wrap(ptr) {
         ptr = ptr >>> 0;
         const obj = Object.create(Automerge.prototype);
@@ -25,6 +34,8 @@ export class Automerge {
      * @returns {any}
      */
     applyAndReturnPatches(object, meta) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_applyAndReturnPatches(this.__wbg_ptr, object, meta);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -35,6 +46,8 @@ export class Automerge {
      * @param {Change[]} changes
      */
     applyChanges(changes) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_applyChanges(this.__wbg_ptr, changes);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -46,6 +59,8 @@ export class Automerge {
      * @returns {any}
      */
     applyPatches(object, meta) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_applyPatches(this.__wbg_ptr, object, meta);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -57,6 +72,8 @@ export class Automerge {
      * @returns {Automerge}
      */
     clone(actor) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         var ptr0 = isLikeNone(actor) ? 0 : passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len0 = WASM_VECTOR_LEN;
         const ret = wasm.automerge_clone(this.__wbg_ptr, ptr0, len0);
@@ -71,8 +88,13 @@ export class Automerge {
      * @returns {Hash | null}
      */
     commit(message, time) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         var ptr0 = isLikeNone(message) ? 0 : passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len0 = WASM_VECTOR_LEN;
+        if (!isLikeNone(time)) {
+            _assertNum(time);
+        }
         const ret = wasm.automerge_commit(this.__wbg_ptr, ptr0, len0, !isLikeNone(time), isLikeNone(time) ? 0 : time);
         return ret;
     }
@@ -81,6 +103,8 @@ export class Automerge {
      * @param {Prop} prop
      */
     delete(obj, prop) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_delete(this.__wbg_ptr, obj, prop);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -92,6 +116,8 @@ export class Automerge {
      * @returns {Patch[]}
      */
     diff(before, after) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_diff(this.__wbg_ptr, before, after);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -102,6 +128,8 @@ export class Automerge {
      * @returns {Patch[]}
      */
     diffIncremental() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_diffIncremental(this.__wbg_ptr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -116,6 +144,8 @@ export class Automerge {
      * @returns {Array<any>}
      */
     diffPath(path, before, after, options) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_diffPath(this.__wbg_ptr, path, before, after, options);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -123,6 +153,8 @@ export class Automerge {
         return takeFromExternrefTable0(ret[0]);
     }
     dump() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         wasm.automerge_dump(this.__wbg_ptr);
     }
     /**
@@ -131,8 +163,13 @@ export class Automerge {
      * @returns {Hash}
      */
     emptyChange(message, time) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         var ptr0 = isLikeNone(message) ? 0 : passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len0 = WASM_VECTOR_LEN;
+        if (!isLikeNone(time)) {
+            _assertNum(time);
+        }
         const ret = wasm.automerge_emptyChange(this.__wbg_ptr, ptr0, len0, !isLikeNone(time), isLikeNone(time) ? 0 : time);
         return ret;
     }
@@ -141,6 +178,8 @@ export class Automerge {
      * @returns {boolean}
      */
     enableFreeze(enable) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_enableFreeze(this.__wbg_ptr, enable);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -153,6 +192,8 @@ export class Automerge {
      * @returns {Automerge}
      */
     fork(actor, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         var ptr0 = isLikeNone(actor) ? 0 : passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len0 = WASM_VECTOR_LEN;
         const ret = wasm.automerge_fork(this.__wbg_ptr, ptr0, len0, heads);
@@ -166,7 +207,12 @@ export class Automerge {
      * @returns {SyncMessage | null}
      */
     generateSyncMessage(state) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(state, SyncState);
+        if (state.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.automerge_generateSyncMessage(this.__wbg_ptr, state.__wbg_ptr);
         return ret;
     }
@@ -177,6 +223,8 @@ export class Automerge {
      * @returns {any}
      */
     get(obj, prop, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_get(this.__wbg_ptr, obj, prop, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -190,6 +238,8 @@ export class Automerge {
         let deferred1_0;
         let deferred1_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.automerge_getActorId(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
@@ -205,6 +255,8 @@ export class Automerge {
      * @returns {Array<any>}
      */
     getAll(obj, arg, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getAll(this.__wbg_ptr, obj, arg, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -218,6 +270,9 @@ export class Automerge {
      * @returns {any}
      */
     getBlock(text, index, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        _assertNum(index);
         const ret = wasm.automerge_getBlock(this.__wbg_ptr, text, index, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -229,6 +284,8 @@ export class Automerge {
      * @returns {Change | null}
      */
     getChangeByHash(hash) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getChangeByHash(this.__wbg_ptr, hash);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -240,6 +297,8 @@ export class Automerge {
      * @returns {ChangeMetadata | null}
      */
     getChangeMetaByHash(hash) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getChangeMetaByHash(this.__wbg_ptr, hash);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -251,6 +310,8 @@ export class Automerge {
      * @returns {Change[]}
      */
     getChanges(have_deps) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getChanges(this.__wbg_ptr, have_deps);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -262,7 +323,12 @@ export class Automerge {
      * @returns {Change[]}
      */
     getChangesAdded(other) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(other, Automerge);
+        if (other.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.automerge_getChangesAdded(this.__wbg_ptr, other.__wbg_ptr);
         return ret;
     }
@@ -271,6 +337,8 @@ export class Automerge {
      * @returns {ChangeMetadata[]}
      */
     getChangesMeta(have_deps) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getChangesMeta(this.__wbg_ptr, have_deps);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -288,6 +356,8 @@ export class Automerge {
         let deferred2_0;
         let deferred2_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.automerge_getCursor(this.__wbg_ptr, obj, position, heads, move_cursor);
             var ptr1 = ret[0];
             var len1 = ret[1];
@@ -309,6 +379,8 @@ export class Automerge {
      * @returns {number}
      */
     getCursorPosition(obj, cursor, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getCursorPosition(this.__wbg_ptr, obj, cursor, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -320,6 +392,8 @@ export class Automerge {
      * @returns {DecodedChange | null}
      */
     getDecodedChangeByHash(hash) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getDecodedChangeByHash(this.__wbg_ptr, hash);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -330,6 +404,8 @@ export class Automerge {
      * @returns {Heads}
      */
     getHeads() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getHeads(this.__wbg_ptr);
         return ret;
     }
@@ -337,6 +413,8 @@ export class Automerge {
      * @returns {Change | null}
      */
     getLastLocalChange() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getLastLocalChange(this.__wbg_ptr);
         return ret;
     }
@@ -345,6 +423,8 @@ export class Automerge {
      * @returns {Array<any>}
      */
     getMissingDeps(heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getMissingDeps(this.__wbg_ptr, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -358,6 +438,8 @@ export class Automerge {
      * @returns {any}
      */
     getWithType(obj, prop, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_getWithType(this.__wbg_ptr, obj, prop, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -369,7 +451,12 @@ export class Automerge {
      * @returns {boolean}
      */
     hasOurChanges(state) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(state, SyncState);
+        if (state.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.automerge_hasOurChanges(this.__wbg_ptr, state.__wbg_ptr);
         return ret !== 0;
     }
@@ -379,6 +466,8 @@ export class Automerge {
      * @param {number} value
      */
     increment(obj, prop, value) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_increment(this.__wbg_ptr, obj, prop, value);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -391,6 +480,8 @@ export class Automerge {
      * @param {any} datatype
      */
     insert(obj, index, value, datatype) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_insert(this.__wbg_ptr, obj, index, value, datatype);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -406,6 +497,8 @@ export class Automerge {
         let deferred2_0;
         let deferred2_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.automerge_insertObject(this.__wbg_ptr, obj, index, value);
             var ptr1 = ret[0];
             var len1 = ret[1];
@@ -421,12 +514,16 @@ export class Automerge {
         }
     }
     integrate() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         wasm.automerge_integrate(this.__wbg_ptr);
     }
     /**
      * @param {Heads} heads
      */
     isolate(heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_isolate(this.__wbg_ptr, heads);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -437,6 +534,9 @@ export class Automerge {
      * @param {number} index
      */
     joinBlock(obj, index) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        _assertNum(index);
         const ret = wasm.automerge_joinBlock(this.__wbg_ptr, obj, index);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -448,6 +548,8 @@ export class Automerge {
      * @returns {Array<any>}
      */
     keys(obj, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_keys(this.__wbg_ptr, obj, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -460,6 +562,8 @@ export class Automerge {
      * @returns {number}
      */
     length(obj, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_length(this.__wbg_ptr, obj, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -471,6 +575,8 @@ export class Automerge {
      * @returns {number}
      */
     loadIncremental(data) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_loadIncremental(this.__wbg_ptr, data);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -485,6 +591,8 @@ export class Automerge {
      * @param {any} datatype
      */
     mark(obj, range, name, value, datatype) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_mark(this.__wbg_ptr, obj, range, name, value, datatype);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -496,6 +604,8 @@ export class Automerge {
      * @returns {any}
      */
     marks(obj, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_marks(this.__wbg_ptr, obj, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -509,6 +619,8 @@ export class Automerge {
      * @returns {object}
      */
     marksAt(obj, index, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_marksAt(this.__wbg_ptr, obj, index, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -522,6 +634,8 @@ export class Automerge {
      * @returns {any}
      */
     materialize(obj, heads, meta) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_materialize(this.__wbg_ptr, obj, heads, meta);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -533,7 +647,12 @@ export class Automerge {
      * @returns {Heads}
      */
     merge(other) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(other, Automerge);
+        if (other.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.automerge_merge(this.__wbg_ptr, other.__wbg_ptr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -559,6 +678,8 @@ export class Automerge {
      * @returns {object}
      */
     objInfo(obj, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_objInfo(this.__wbg_ptr, obj, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -569,6 +690,8 @@ export class Automerge {
      * @returns {number}
      */
     pendingOps() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_pendingOps(this.__wbg_ptr);
         return ret;
     }
@@ -578,6 +701,8 @@ export class Automerge {
      * @param {any} datatype
      */
     push(obj, value, datatype) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_push(this.__wbg_ptr, obj, value, datatype);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -592,6 +717,8 @@ export class Automerge {
         let deferred2_0;
         let deferred2_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.automerge_pushObject(this.__wbg_ptr, obj, value);
             var ptr1 = ret[0];
             var len1 = ret[1];
@@ -613,6 +740,8 @@ export class Automerge {
      * @param {any} datatype
      */
     put(obj, prop, value, datatype) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_put(this.__wbg_ptr, obj, prop, value, datatype);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -625,6 +754,8 @@ export class Automerge {
      * @returns {ObjID}
      */
     putObject(obj, prop, value) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_putObject(this.__wbg_ptr, obj, prop, value);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -636,7 +767,12 @@ export class Automerge {
      * @param {SyncMessage} message
      */
     receiveSyncMessage(state, message) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(state, SyncState);
+        if (state.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.automerge_receiveSyncMessage(this.__wbg_ptr, state.__wbg_ptr, message);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -648,18 +784,24 @@ export class Automerge {
      * @param {(arg: any) => any | undefined} deconstruct
      */
     registerDatatype(datatype, construct, deconstruct) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_registerDatatype(this.__wbg_ptr, datatype, construct, deconstruct);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
     resetDiffCursor() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         wasm.automerge_resetDiffCursor(this.__wbg_ptr);
     }
     /**
      * @returns {number}
      */
     rollback() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_rollback(this.__wbg_ptr);
         return ret;
     }
@@ -667,6 +809,8 @@ export class Automerge {
      * @returns {Uint8Array}
      */
     save() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_save(this.__wbg_ptr);
         return ret;
     }
@@ -674,6 +818,8 @@ export class Automerge {
      * @returns {Uint8Array}
      */
     saveAndVerify() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_saveAndVerify(this.__wbg_ptr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -685,6 +831,8 @@ export class Automerge {
      * @returns {Uint8Array}
      */
     saveBundle(hashes) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_saveBundle(this.__wbg_ptr, hashes);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -695,6 +843,8 @@ export class Automerge {
      * @returns {Uint8Array}
      */
     saveIncremental() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_saveIncremental(this.__wbg_ptr);
         return ret;
     }
@@ -702,6 +852,8 @@ export class Automerge {
      * @returns {Uint8Array}
      */
     saveNoCompress() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_saveNoCompress(this.__wbg_ptr);
         return ret;
     }
@@ -710,6 +862,8 @@ export class Automerge {
      * @returns {Uint8Array}
      */
     saveSince(heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_saveSince(this.__wbg_ptr, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -722,6 +876,8 @@ export class Automerge {
      * @returns {Array<any>}
      */
     spans(obj, heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_spans(this.__wbg_ptr, obj, heads);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -735,6 +891,8 @@ export class Automerge {
      * @param {any} text
      */
     splice(obj, start, delete_count, text) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_splice(this.__wbg_ptr, obj, start, delete_count, text);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -746,6 +904,8 @@ export class Automerge {
      * @param {{[key: string]: MaterializeValue}} block
      */
     splitBlock(obj, index, block) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_splitBlock(this.__wbg_ptr, obj, index, block);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -755,6 +915,8 @@ export class Automerge {
      * @returns {Stats}
      */
     stats() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_stats(this.__wbg_ptr);
         return ret;
     }
@@ -767,6 +929,8 @@ export class Automerge {
         let deferred2_0;
         let deferred2_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.automerge_text(this.__wbg_ptr, obj, heads);
             var ptr1 = ret[0];
             var len1 = ret[1];
@@ -786,6 +950,8 @@ export class Automerge {
      * @returns {MaterializeValue}
      */
     toJS(meta) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_toJS(this.__wbg_ptr, meta);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -796,6 +962,8 @@ export class Automerge {
      * @returns {Hash[]}
      */
     topoHistoryTraversal() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_topoHistoryTraversal(this.__wbg_ptr);
         return ret;
     }
@@ -805,6 +973,8 @@ export class Automerge {
      * @param {string} name
      */
     unmark(obj, range, name) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_unmark(this.__wbg_ptr, obj, range, name);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -816,12 +986,17 @@ export class Automerge {
      * @param {{[key: string]: MaterializeValue}} block
      */
     updateBlock(obj, index, block) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        _assertNum(index);
         const ret = wasm.automerge_updateBlock(this.__wbg_ptr, obj, index, block);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
     updateDiffCursor() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         wasm.automerge_updateDiffCursor(this.__wbg_ptr);
     }
     /**
@@ -830,6 +1005,8 @@ export class Automerge {
      * @param {UpdateSpansConfig | undefined | null} config
      */
     updateSpans(obj, args, config) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_updateSpans(this.__wbg_ptr, obj, args, config);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -840,6 +1017,8 @@ export class Automerge {
      * @param {string} new_text
      */
     updateText(obj, new_text) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.automerge_updateText(this.__wbg_ptr, obj, new_text);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -872,6 +1051,9 @@ export class ObliviousText {
      * @param {any} target_value
      */
     applyRemoteOp(lamport, actor, elem_id, predecessor_id, value, sort_key, valid, target_elem_id, target_valid, target_value) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        _assertNum(lamport);
         const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.oblivioustext_applyRemoteOp(this.__wbg_ptr, lamport, ptr0, len0, elem_id, predecessor_id, value, sort_key, valid, target_elem_id, target_valid, target_value);
@@ -886,6 +1068,8 @@ export class ObliviousText {
         let deferred2_0;
         let deferred2_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.oblivioustext_debugCleartext(this.__wbg_ptr);
             var ptr1 = ret[0];
             var len1 = ret[1];
@@ -905,7 +1089,12 @@ export class ObliviousText {
      * @returns {any}
      */
     generateSyncMessage(state) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(state, SyncState);
+        if (state.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.oblivioustext_generateSyncMessage(this.__wbg_ptr, state.__wbg_ptr);
         return ret;
     }
@@ -916,6 +1105,8 @@ export class ObliviousText {
         let deferred1_0;
         let deferred1_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.oblivioustext_getActorId(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
@@ -928,6 +1119,8 @@ export class ObliviousText {
      * @returns {number}
      */
     getLamport() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.oblivioustext_getLamport(this.__wbg_ptr);
         return ret >>> 0;
     }
@@ -935,6 +1128,8 @@ export class ObliviousText {
      * @returns {Array<any>}
      */
     getRenderBuffer() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.oblivioustext_getRenderBuffer(this.__wbg_ptr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -948,6 +1143,8 @@ export class ObliviousText {
         let deferred1_0;
         let deferred1_1;
         try {
+            if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+            _assertNum(this.__wbg_ptr);
             const ret = wasm.oblivioustext_lastError(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
@@ -957,6 +1154,8 @@ export class ObliviousText {
         }
     }
     materialize() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.oblivioustext_materialize(this.__wbg_ptr);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -982,6 +1181,8 @@ export class ObliviousText {
      * @returns {object}
      */
     obliviousEdit(key_code, cursor) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.oblivioustext_obliviousEdit(this.__wbg_ptr, key_code, cursor);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -993,7 +1194,12 @@ export class ObliviousText {
      * @param {Uint8Array} message
      */
     receiveSyncMessage(state, message) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         _assertClass(state, SyncState);
+        if (state.__wbg_ptr === 0) {
+            throw new Error('Attempt to use a moved value');
+        }
         const ret = wasm.oblivioustext_receiveSyncMessage(this.__wbg_ptr, state.__wbg_ptr, message);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -1003,6 +1209,9 @@ export class ObliviousText {
 if (Symbol.dispose) ObliviousText.prototype[Symbol.dispose] = ObliviousText.prototype.free;
 
 export class SyncState {
+    constructor() {
+        throw new Error('cannot invoke `new` directly');
+    }
     static __wrap(ptr) {
         ptr = ptr >>> 0;
         const obj = Object.create(SyncState.prototype);
@@ -1024,6 +1233,8 @@ export class SyncState {
      * @returns {SyncState}
      */
     clone() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.syncstate_clone(this.__wbg_ptr);
         return SyncState.__wrap(ret);
     }
@@ -1031,6 +1242,8 @@ export class SyncState {
      * @returns {Heads}
      */
     get lastSentHeads() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.syncstate_lastSentHeads(this.__wbg_ptr);
         return ret;
     }
@@ -1038,6 +1251,8 @@ export class SyncState {
      * @param {Heads} heads
      */
     set lastSentHeads(heads) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.syncstate_set_lastSentHeads(this.__wbg_ptr, heads);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -1047,6 +1262,8 @@ export class SyncState {
      * @param {Heads} hashes
      */
     set sentHashes(hashes) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.syncstate_set_sentHashes(this.__wbg_ptr, hashes);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
@@ -1056,6 +1273,8 @@ export class SyncState {
      * @returns {Heads}
      */
     get sharedHeads() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.syncstate_sharedHeads(this.__wbg_ptr);
         return ret;
     }
@@ -1140,6 +1359,9 @@ export function encodeSyncMessage(message) {
  */
 export function encodeSyncState(state) {
     _assertClass(state, SyncState);
+    if (state.__wbg_ptr === 0) {
+        throw new Error('Attempt to use a moved value');
+    }
     const ret = wasm.encodeSyncState(state.__wbg_ptr);
     return ret;
 }
@@ -1150,6 +1372,9 @@ export function encodeSyncState(state) {
  */
 export function exportSyncState(state) {
     _assertClass(state, SyncState);
+    if (state.__wbg_ptr === 0) {
+        throw new Error('Attempt to use a moved value');
+    }
     const ret = wasm.exportSyncState(state.__wbg_ptr);
     return ret;
 }
@@ -1215,6 +1440,10 @@ export function wasmReleaseInfo() {
     const ret = wasm.wasmReleaseInfo();
     return ret;
 }
+
+//#endregion
+
+//#region wasm imports
 import * as import1 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
 import * as import2 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
 import * as import3 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
@@ -1242,24 +1471,27 @@ import * as import23 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_BigInt_b7bbccdff258c9f2: function(arg0) {
+        __wbg_BigInt_b7bbccdff258c9f2: function() { return logError(function (arg0) {
             const ret = BigInt(arg0);
             return ret;
-        },
-        __wbg_Error_8c4e43fe74559d73: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_Error_8c4e43fe74559d73: function() { return logError(function (arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
-        },
-        __wbg_String_8f0eb39a4a4c2f66: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_String_8f0eb39a4a4c2f66: function() { return logError(function (arg0, arg1) {
             const ret = String(arg1);
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-        },
+        }, arguments); },
         __wbg___wbindgen_boolean_get_bbbb1c18aa2f5e25: function(arg0) {
             const v = arg0;
             const ret = typeof(v) === 'boolean' ? v : undefined;
+            if (!isLikeNone(ret)) {
+                _assertBoolean(ret);
+            }
             return isLikeNone(ret) ? 0xFFFFFF : ret ? 1 : 0;
         },
         __wbg___wbindgen_debug_string_0bc8482c6e3508ae: function(arg0, arg1) {
@@ -1271,39 +1503,48 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_gt_d7bb3629eac381f5: function(arg0, arg1) {
             const ret = arg0 > arg1;
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_is_bigint_31b12575b56f32fc: function(arg0) {
             const ret = typeof(arg0) === 'bigint';
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_is_function_0095a73b8b156f76: function(arg0) {
             const ret = typeof(arg0) === 'function';
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_is_null_ac34f5003991759a: function(arg0) {
             const ret = arg0 === null;
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_is_object_5ae8e5880f2c1fbd: function(arg0) {
             const val = arg0;
             const ret = typeof(val) === 'object' && val !== null;
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_is_string_cd444516edc5b180: function(arg0) {
             const ret = typeof(arg0) === 'string';
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_is_undefined_9e4d92534c42d778: function(arg0) {
             const ret = arg0 === undefined;
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_jsval_loose_eq_9dd77d8cd6671811: function(arg0, arg1) {
             const ret = arg0 == arg1;
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_lt_bb59cc3d23526e0d: function(arg0, arg1) {
             const ret = arg0 < arg1;
+            _assertBoolean(ret);
             return ret;
         },
         __wbg___wbindgen_neg_6b4d356dff49dcc6: function(arg0) {
@@ -1313,6 +1554,9 @@ function __wbg_get_imports() {
         __wbg___wbindgen_number_get_8ff4255516ccad3e: function(arg0, arg1) {
             const obj = arg1;
             const ret = typeof(obj) === 'number' ? obj : undefined;
+            if (!isLikeNone(ret)) {
+                _assertNum(ret);
+            }
             getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
         },
@@ -1331,14 +1575,14 @@ function __wbg_get_imports() {
             const ret = Reflect.apply(arg0, arg1, arg2);
             return ret;
         }, arguments); },
-        __wbg_assign_6170c0d04d5c26f4: function(arg0, arg1) {
+        __wbg_assign_6170c0d04d5c26f4: function() { return logError(function (arg0, arg1) {
             const ret = Object.assign(arg0, arg1);
             return ret;
-        },
-        __wbg_buffer_26d0910f3a5bc899: function(arg0) {
+        }, arguments); },
+        __wbg_buffer_26d0910f3a5bc899: function() { return logError(function (arg0) {
             const ret = arg0.buffer;
             return ret;
-        },
+        }, arguments); },
         __wbg_call_389efe28435a9388: function() { return handleError(function (arg0, arg1) {
             const ret = arg0.call(arg1);
             return ret;
@@ -1347,27 +1591,29 @@ function __wbg_get_imports() {
             const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
-        __wbg_concat_f6e5ebc81f4917f1: function(arg0, arg1) {
+        __wbg_concat_f6e5ebc81f4917f1: function() { return logError(function (arg0, arg1) {
             const ret = arg0.concat(arg1);
             return ret;
-        },
-        __wbg_defineProperty_fc8692a66be8fe2d: function(arg0, arg1, arg2) {
+        }, arguments); },
+        __wbg_defineProperty_fc8692a66be8fe2d: function() { return logError(function (arg0, arg1, arg2) {
             const ret = Object.defineProperty(arg0, arg1, arg2);
             return ret;
-        },
+        }, arguments); },
         __wbg_deleteProperty_8c8a05da881fea59: function() { return handleError(function (arg0, arg1) {
             const ret = Reflect.deleteProperty(arg0, arg1);
+            _assertBoolean(ret);
             return ret;
         }, arguments); },
-        __wbg_done_57b39ecd9addfe81: function(arg0) {
+        __wbg_done_57b39ecd9addfe81: function() { return logError(function (arg0) {
             const ret = arg0.done;
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_entries_58c7934c745daac7: function(arg0) {
+        }, arguments); },
+        __wbg_entries_58c7934c745daac7: function() { return logError(function (arg0) {
             const ret = Object.entries(arg0);
             return ret;
-        },
-        __wbg_error_7534b8e9a36f1ab4: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_error_7534b8e9a36f1ab4: function() { return logError(function (arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
             try {
@@ -1377,35 +1623,35 @@ function __wbg_get_imports() {
             } finally {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
-        },
-        __wbg_for_c3adefd268cb6f1c: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_for_c3adefd268cb6f1c: function() { return logError(function (arg0, arg1) {
             const ret = Symbol.for(getStringFromWasm0(arg0, arg1));
             return ret;
-        },
-        __wbg_freeze_661d9047fd889cd0: function(arg0) {
+        }, arguments); },
+        __wbg_freeze_661d9047fd889cd0: function() { return logError(function (arg0) {
             const ret = Object.freeze(arg0);
             return ret;
-        },
-        __wbg_from_bddd64e7d5ff6941: function(arg0) {
+        }, arguments); },
+        __wbg_from_bddd64e7d5ff6941: function() { return logError(function (arg0) {
             const ret = Array.from(arg0);
             return ret;
-        },
+        }, arguments); },
         __wbg_getRandomValues_1c61fac11405ffdc: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
-        __wbg_getTime_1e3cd1391c5c3995: function(arg0) {
+        __wbg_getTime_1e3cd1391c5c3995: function() { return logError(function (arg0) {
             const ret = arg0.getTime();
             return ret;
-        },
-        __wbg_get_9b94d73e6221f75c: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_get_9b94d73e6221f75c: function() { return logError(function (arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
             return ret;
-        },
+        }, arguments); },
         __wbg_get_b3ed3ad4be2bc8ac: function() { return handleError(function (arg0, arg1) {
             const ret = Reflect.get(arg0, arg1);
             return ret;
         }, arguments); },
-        __wbg_instanceof_ArrayBuffer_c367199e2fa2aa04: function(arg0) {
+        __wbg_instanceof_ArrayBuffer_c367199e2fa2aa04: function() { return logError(function (arg0) {
             let result;
             try {
                 result = arg0 instanceof ArrayBuffer;
@@ -1413,9 +1659,10 @@ function __wbg_get_imports() {
                 result = false;
             }
             const ret = result;
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_instanceof_Date_1b9f15b87f10aa4c: function(arg0) {
+        }, arguments); },
+        __wbg_instanceof_Date_1b9f15b87f10aa4c: function() { return logError(function (arg0) {
             let result;
             try {
                 result = arg0 instanceof Date;
@@ -1423,9 +1670,10 @@ function __wbg_get_imports() {
                 result = false;
             }
             const ret = result;
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_instanceof_Object_1c6af87502b733ed: function(arg0) {
+        }, arguments); },
+        __wbg_instanceof_Object_1c6af87502b733ed: function() { return logError(function (arg0) {
             let result;
             try {
                 result = arg0 instanceof Object;
@@ -1433,9 +1681,10 @@ function __wbg_get_imports() {
                 result = false;
             }
             const ret = result;
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_instanceof_Uint8Array_9b9075935c74707c: function(arg0) {
+        }, arguments); },
+        __wbg_instanceof_Uint8Array_9b9075935c74707c: function() { return logError(function (arg0) {
             let result;
             try {
                 result = arg0 instanceof Uint8Array;
@@ -1443,86 +1692,95 @@ function __wbg_get_imports() {
                 result = false;
             }
             const ret = result;
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_isArray_a2cef7634fcb7c0d: function(arg0) {
+        }, arguments); },
+        __wbg_isArray_a2cef7634fcb7c0d: function() { return logError(function (arg0) {
             const ret = Array.isArray(arg0);
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_isArray_d314bb98fcf08331: function(arg0) {
+        }, arguments); },
+        __wbg_isArray_d314bb98fcf08331: function() { return logError(function (arg0) {
             const ret = Array.isArray(arg0);
+            _assertBoolean(ret);
             return ret;
-        },
-        __wbg_iterator_6ff6560ca1568e55: function() {
+        }, arguments); },
+        __wbg_iterator_6ff6560ca1568e55: function() { return logError(function () {
             const ret = Symbol.iterator;
             return ret;
-        },
-        __wbg_keys_b50a709a76add04e: function(arg0) {
+        }, arguments); },
+        __wbg_keys_b50a709a76add04e: function() { return logError(function (arg0) {
             const ret = Object.keys(arg0);
             return ret;
-        },
-        __wbg_length_32ed9a279acd054c: function(arg0) {
+        }, arguments); },
+        __wbg_length_32ed9a279acd054c: function() { return logError(function (arg0) {
             const ret = arg0.length;
+            _assertNum(ret);
             return ret;
-        },
-        __wbg_length_35a7bace40f36eac: function(arg0) {
+        }, arguments); },
+        __wbg_length_35a7bace40f36eac: function() { return logError(function (arg0) {
             const ret = arg0.length;
+            _assertNum(ret);
             return ret;
-        },
-        __wbg_length_68dc7c5cf1b6d349: function(arg0) {
+        }, arguments); },
+        __wbg_length_68dc7c5cf1b6d349: function() { return logError(function (arg0) {
             const ret = arg0.length;
+            _assertNum(ret);
             return ret;
-        },
-        __wbg_log_6b5ca2e6124b2808: function(arg0) {
+        }, arguments); },
+        __wbg_log_6b5ca2e6124b2808: function() { return logError(function (arg0) {
             console.log(arg0);
-        },
-        __wbg_log_b948c93e3e66d64f: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_log_b948c93e3e66d64f: function() { return logError(function (arg0, arg1) {
             console.log(arg0, arg1);
-        },
-        __wbg_new_245cd5c49157e602: function(arg0) {
+        }, arguments); },
+        __wbg_new_245cd5c49157e602: function() { return logError(function (arg0) {
             const ret = new Date(arg0);
             return ret;
-        },
-        __wbg_new_361308b2356cecd0: function() {
+        }, arguments); },
+        __wbg_new_361308b2356cecd0: function() { return logError(function () {
             const ret = new Object();
             return ret;
-        },
-        __wbg_new_3eb36ae241fe6f44: function() {
+        }, arguments); },
+        __wbg_new_3eb36ae241fe6f44: function() { return logError(function () {
             const ret = new Array();
             return ret;
-        },
-        __wbg_new_72b49615380db768: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_new_72b49615380db768: function() { return logError(function (arg0, arg1) {
             const ret = new Error(getStringFromWasm0(arg0, arg1));
             return ret;
-        },
-        __wbg_new_8a6f238a6ece86ea: function() {
+        }, arguments); },
+        __wbg_new_8a6f238a6ece86ea: function() { return logError(function () {
             const ret = new Error();
             return ret;
-        },
-        __wbg_new_911dabf69fa7eb20: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_new_911dabf69fa7eb20: function() { return logError(function (arg0, arg1) {
             const ret = new RangeError(getStringFromWasm0(arg0, arg1));
             return ret;
-        },
-        __wbg_new_dd2b680c8bf6ae29: function(arg0) {
+        }, arguments); },
+        __wbg_new_dd2b680c8bf6ae29: function() { return logError(function (arg0) {
             const ret = new Uint8Array(arg0);
             return ret;
-        },
-        __wbg_new_from_slice_a3d2629dc1826784: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_new_from_slice_a3d2629dc1826784: function() { return logError(function (arg0, arg1) {
             const ret = new Uint8Array(getArrayU8FromWasm0(arg0, arg1));
             return ret;
-        },
-        __wbg_new_with_length_1763c527b2923202: function(arg0) {
+        }, arguments); },
+        __wbg_new_with_length_1763c527b2923202: function() { return logError(function (arg0) {
             const ret = new Array(arg0 >>> 0);
             return ret;
-        },
+        }, arguments); },
         __wbg_next_3482f54c49e8af19: function() { return handleError(function (arg0) {
             const ret = arg0.next();
             return ret;
         }, arguments); },
-        __wbg_next_418f80d8f5303233: function(arg0) {
+        __wbg_next_418f80d8f5303233: function() { return logError(function (arg0) {
             const ret = arg0.next;
             return ret;
-        },
+        }, arguments); },
+        __wbg_oc_bitonic_sort_edfeb5d07eb94e5b: function() { return logError(function (arg0, arg1) {
+            oc_bitonic_sort(arg0, arg1 >>> 0);
+        }, arguments); },
         __wbg_oc_enc_safe_a5eb1f54dc7f6d6d: function() { return handleError(function (arg0) {
             const ret = oc_enc_safe(arg0);
             return ret;
@@ -1531,88 +1789,91 @@ function __wbg_get_imports() {
             const ret = Reflect.ownKeys(arg0);
             return ret;
         }, arguments); },
-        __wbg_prototypesetcall_bdcdcc5842e4d77d: function(arg0, arg1, arg2) {
+        __wbg_prototypesetcall_bdcdcc5842e4d77d: function() { return logError(function (arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
-        },
-        __wbg_push_8ffdcb2063340ba5: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_push_8ffdcb2063340ba5: function() { return logError(function (arg0, arg1) {
             const ret = arg0.push(arg1);
-            return ret;
-        },
-        __wbg_set_3f1d0b984ed272ed: function(arg0, arg1, arg2) {
-            arg0[arg1] = arg2;
-        },
-        __wbg_set_6cb8631f80447a67: function() { return handleError(function (arg0, arg1, arg2) {
-            const ret = Reflect.set(arg0, arg1, arg2);
+            _assertNum(ret);
             return ret;
         }, arguments); },
-        __wbg_set_f43e577aea94465b: function(arg0, arg1, arg2) {
+        __wbg_set_3f1d0b984ed272ed: function() { return logError(function (arg0, arg1, arg2) {
+            arg0[arg1] = arg2;
+        }, arguments); },
+        __wbg_set_6cb8631f80447a67: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = Reflect.set(arg0, arg1, arg2);
+            _assertBoolean(ret);
+            return ret;
+        }, arguments); },
+        __wbg_set_f43e577aea94465b: function() { return logError(function (arg0, arg1, arg2) {
             arg0[arg1 >>> 0] = arg2;
-        },
-        __wbg_slice_b0fa09b1e0041d42: function(arg0, arg1, arg2) {
+        }, arguments); },
+        __wbg_slice_b0fa09b1e0041d42: function() { return logError(function (arg0, arg1, arg2) {
             const ret = arg0.slice(arg1 >>> 0, arg2 >>> 0);
             return ret;
-        },
-        __wbg_stack_0ed75d68575b0f3c: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_stack_0ed75d68575b0f3c: function() { return logError(function (arg0, arg1) {
             const ret = arg1.stack;
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-        },
-        __wbg_stringify_e4a940b133e6b7d8: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_stringify_e4a940b133e6b7d8: function() { return logError(function (arg0, arg1) {
             const ret = JSON.stringify(arg1);
             var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             var len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-        },
+        }, arguments); },
         __wbg_toString_3cadee6e7c22b39e: function() { return handleError(function (arg0, arg1) {
             const ret = arg0.toString(arg1);
             return ret;
         }, arguments); },
-        __wbg_toString_56d946daff83867b: function(arg0, arg1, arg2) {
+        __wbg_toString_56d946daff83867b: function() { return logError(function (arg0, arg1, arg2) {
             const ret = arg1.toString(arg2);
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-        },
-        __wbg_toString_b388ecd2d3c517c3: function(arg0) {
+        }, arguments); },
+        __wbg_toString_b388ecd2d3c517c3: function() { return logError(function (arg0) {
             const ret = arg0.toString();
             return ret;
-        },
-        __wbg_unshift_a4a28a3b4a2e621b: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_unshift_a4a28a3b4a2e621b: function() { return logError(function (arg0, arg1) {
             const ret = arg0.unshift(arg1);
+            _assertNum(ret);
             return ret;
-        },
-        __wbg_value_0546255b415e96c1: function(arg0) {
+        }, arguments); },
+        __wbg_value_0546255b415e96c1: function() { return logError(function (arg0) {
             const ret = arg0.value;
             return ret;
-        },
-        __wbg_values_5da93bc719d272cf: function(arg0) {
+        }, arguments); },
+        __wbg_values_5da93bc719d272cf: function() { return logError(function (arg0) {
             const ret = Object.values(arg0);
             return ret;
-        },
-        __wbindgen_cast_0000000000000001: function(arg0) {
+        }, arguments); },
+        __wbindgen_cast_0000000000000001: function() { return logError(function (arg0) {
             // Cast intrinsic for `F64 -> Externref`.
             const ret = arg0;
             return ret;
-        },
-        __wbindgen_cast_0000000000000002: function(arg0) {
+        }, arguments); },
+        __wbindgen_cast_0000000000000002: function() { return logError(function (arg0) {
             // Cast intrinsic for `I64 -> Externref`.
             const ret = arg0;
             return ret;
-        },
-        __wbindgen_cast_0000000000000003: function(arg0, arg1) {
+        }, arguments); },
+        __wbindgen_cast_0000000000000003: function() { return logError(function (arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
-        },
-        __wbindgen_cast_0000000000000004: function(arg0) {
+        }, arguments); },
+        __wbindgen_cast_0000000000000004: function() { return logError(function (arg0) {
             // Cast intrinsic for `U64 -> Externref`.
             const ret = BigInt.asUintN(64, arg0);
             return ret;
-        },
+        }, arguments); },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
@@ -1652,6 +1913,8 @@ function __wbg_get_imports() {
     };
 }
 
+
+//#endregion
 const AutomergeFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_automerge_free(ptr >>> 0, 1));
@@ -1662,16 +1925,28 @@ const SyncStateFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_syncstate_free(ptr >>> 0, 1));
 
+
+//#region intrinsics
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
     wasm.__wbindgen_externrefs.set(idx, obj);
     return idx;
 }
 
+function _assertBoolean(n) {
+    if (typeof(n) !== 'boolean') {
+        throw new Error(`expected a boolean argument, found ${typeof(n)}`);
+    }
+}
+
 function _assertClass(instance, klass) {
     if (!(instance instanceof klass)) {
         throw new Error(`expected instance of ${klass.name}`);
     }
+}
+
+function _assertNum(n) {
+    if (typeof(n) !== 'number') throw new Error(`expected a number argument, found ${typeof(n)}`);
 }
 
 function debugString(val) {
@@ -1778,7 +2053,24 @@ function isLikeNone(x) {
     return x === undefined || x === null;
 }
 
+function logError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        let error = (function () {
+            try {
+                return e instanceof Error ? `${e.message}\n\nStack:\n${e.stack}` : e.toString();
+            } catch(_) {
+                return "<failed to stringify thrown value>";
+            }
+        }());
+        console.error("wasm-bindgen: imported JS function that was not marked as `catch` threw an error:", error);
+        throw e;
+    }
+}
+
 function passStringToWasm0(arg, malloc, realloc) {
+    if (typeof(arg) !== 'string') throw new Error(`expected a string argument, found ${typeof(arg)}`);
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
@@ -1806,7 +2098,7 @@ function passStringToWasm0(arg, malloc, realloc) {
         ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
         const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
         const ret = cachedTextEncoder.encodeInto(arg, view);
-
+        if (ret.read !== arg.length) throw new Error('failed to pass whole string');
         offset += ret.written;
         ptr = realloc(ptr, len, offset, 1) >>> 0;
     }
@@ -1850,6 +2142,10 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
+
+//#endregion
+
+//#region wasm loading
 let wasmModule, wasm;
 function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
@@ -1928,7 +2224,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new /* @vite-ignore */ URL('automerge_wasm_bg.wasm', import.meta.url);
+        module_or_path = new URL('automerge_wasm_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
@@ -1942,3 +2238,5 @@ async function __wbg_init(module_or_path) {
 }
 
 export { initSync, __wbg_init as default };
+//#endregion
+export { wasm as __wasm }

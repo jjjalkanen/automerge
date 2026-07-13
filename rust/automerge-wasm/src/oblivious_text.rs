@@ -459,7 +459,7 @@ impl ObliviousTextCrdt {
         }
 
         pad_to_power_of_2(&mut sibling_sort, &fill_key, &fill_data);
-        bitonic_sort(&mut sibling_sort)?;
+        bitonic_sort(&mut sibling_sort, key_size as u32)?;
 
         // Unpack for linear scan. We need elem_id, predecessor_id from data.
         // Also need to read/write next_sibling and is_first_child.
@@ -532,7 +532,7 @@ impl ObliviousTextCrdt {
         for i in num_nodes..padded_len {
             sibling_sort[i].key = fill_key_back.clone();
         }
-        bitonic_sort(&mut sibling_sort)?;
+        bitonic_sort(&mut sibling_sort, sortback_key_size as u32)?;
 
         // Extract next_sibling and is_first_child per node.
         let mut next_sibling: Vec<JsValue> = Vec::with_capacity(num_nodes);
@@ -593,7 +593,7 @@ impl ObliviousTextCrdt {
         }
 
         pad_to_power_of_2(&mut route_records, &fill_rk, &fill_rd);
-        bitonic_sort(&mut route_records)?;
+        bitonic_sort(&mut route_records, route_key_size as u32)?;
 
         // Linear scan: route data into queries.
         let mut running_first_child = dummy_id.clone();
@@ -642,7 +642,7 @@ impl ObliviousTextCrdt {
             let type_flag = oblivious_dom::slice_array(d, ID_SIZE + INT_SIZE, ID_SIZE + 2 * INT_SIZE)?;
             route_records[i].key = oblivious_dom::pack(&[&orig_idx, &type_flag])?;
         }
-        bitonic_sort(&mut route_records)?;
+        bitonic_sort(&mut route_records, sortback2_key_size as u32)?;
 
         // Extract first_child per node from query records (at positions 2*i+1)
         let mut first_child: Vec<JsValue> = Vec::with_capacity(num_nodes);
@@ -706,7 +706,7 @@ impl ObliviousTextCrdt {
         }
 
         pad_to_power_of_2(&mut wire_records, &fill_wk, &fill_wd);
-        bitonic_sort(&mut wire_records)?;
+        bitonic_sort(&mut wire_records, wire_key_size as u32)?;
 
         // Linear scan: route data into queries.
         let mut running_down_eid = dummy_id.clone();
@@ -745,7 +745,7 @@ impl ObliviousTextCrdt {
             let query_kind = oblivious_dom::slice_array(d, 2 * ID_SIZE + 2 * INT_SIZE, 2 * ID_SIZE + 3 * INT_SIZE)?;
             wire_records[i].key = oblivious_dom::pack(&[&orig_idx, &type_flag, &query_kind])?;
         }
-        bitonic_sort(&mut wire_records)?;
+        bitonic_sort(&mut wire_records, sortback3_key_size as u32)?;
 
         // Extract results: 4 records per node (data, q0=first_child, q1=next_sib, q2=parent)
         for i in 0..num_nodes {
@@ -810,7 +810,7 @@ impl ObliviousTextCrdt {
         }
 
         pad_to_power_of_2(&mut prev_records, &fill_pk, &fill_pd);
-        bitonic_sort(&mut prev_records)?;
+        bitonic_sort(&mut prev_records, prev_key_size as u32)?;
 
         // Scan: route prev values.
         let mut running_prev = dummy_id.clone();
@@ -841,7 +841,7 @@ impl ObliviousTextCrdt {
             let type_flag = oblivious_dom::slice_array(d, ID_SIZE + INT_SIZE, ID_SIZE + 2 * INT_SIZE)?;
             prev_records[i].key = oblivious_dom::pack(&[&orig_idx, &type_flag])?;
         }
-        bitonic_sort(&mut prev_records)?;
+        bitonic_sort(&mut prev_records, sortback_prev_key_size as u32)?;
 
         // Apply prev_edge_id from query records.
         for i in 0..total_edges {
@@ -904,7 +904,7 @@ impl ObliviousTextCrdt {
             }
 
             pad_to_power_of_2(&mut sort_entries, &fill_pjk, &fill_pjd);
-            bitonic_sort(&mut sort_entries)?;
+            bitonic_sort(&mut sort_entries, pj_key_size as u32)?;
 
             // Linear scan: route data into queries.
             let mut running_weight = self.zero.clone();
@@ -937,7 +937,7 @@ impl ObliviousTextCrdt {
                 let type_flag = oblivious_dom::slice_array(d, INT_SIZE + ID_SIZE + INT_SIZE, INT_SIZE + ID_SIZE + 2 * INT_SIZE)?;
                 sort_entries[i].key = oblivious_dom::pack(&[&orig_idx, &type_flag])?;
             }
-            bitonic_sort(&mut sort_entries)?;
+            bitonic_sort(&mut sort_entries, sortback_pj_key_size as u32)?;
 
             // Apply updates from query records.
             for i in 0..e {
@@ -977,7 +977,7 @@ impl ObliviousTextCrdt {
         }
 
         pad_to_power_of_2(&mut entries, &fill_pk, &fill_pd);
-        bitonic_sort(&mut entries)?;
+        bitonic_sort(&mut entries, pos_key_size as u32)?;
 
         self.position_map.clear();
         let mut visible_counter = self.zero.clone();
@@ -1054,7 +1054,7 @@ impl ObliviousTextCrdt {
         let fill_pd = value_placeholder;
 
         pad_to_power_of_2(&mut entries, &fill_pk, &fill_pd);
-        bitonic_sort(&mut entries)?;
+        bitonic_sort(&mut entries, pos_key_size as u32)?;
 
         // Zero out the validity byte for non-visible entries so
         // DecryptString skips them during rendering.

@@ -118,7 +118,7 @@
     secureEl.addEventListener('securekeydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       try {
-        const result = crdt.obliviousEdit(e.keyCode, window._cursor);
+        const result = crdt.obliviousEdit(e.charCode, window._cursor);
         window._cursor = result.newCursor;
         secureEl.value = result.content;
         secureEl.setObliviousCursor(window._cursor);

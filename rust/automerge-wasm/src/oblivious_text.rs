@@ -20,7 +20,7 @@ use am::ChangeHash;
 use wasm_bindgen::prelude::*;
 
 use crate::oblivious_dom;
-use crate::oblivious_sort::{bitonic_sort, pad_to_power_of_2, SortEntry};
+use crate::oblivious_sort::{bitonic_sort, oblivious_join, pad_to_power_of_2, SortEntry};
 
 const ID_SIZE: u32 = 32;
 
@@ -788,20 +788,16 @@ impl ObliviousTextCrdt {
         for i in 0..total_edges {
             let orig_idx = oblivious_dom::create_int(i as i32)?;
 
-            // Data: target's edge_id as join key, my edge_id as value
             let key = oblivious_dom::pack(&[&edges[i].next_edge_id, &self.zero])?;
             let data = oblivious_dom::pack(&[&edges[i].edge_id, &orig_idx, &self.zero])?;
             prev_records.push(SortEntry::new(key, data));
 
-            // Query: my edge_id as join key
             let key = oblivious_dom::pack(&[&edges[i].edge_id, &self.one])?;
             let data = oblivious_dom::pack(&[dummy_id, &orig_idx, &self.one])?;
             prev_records.push(SortEntry::new(key, data));
         }
 
-        // Sentinel query for dummy edge ID: the last edge in the tour has
-        // next_edge_id = dummy, so its Data record (key = dummy+0) would leak
-        // into the first real Query. This sentinel drains that register.
+        // Sentinel query: absorbs the last edge's data record (next_edge_id = dummy).
         {
             let key = oblivious_dom::pack(&[dummy_id, &self.one])?;
             let sentinel_idx = oblivious_dom::create_int(total_edges as i32)?;
@@ -812,7 +808,6 @@ impl ObliviousTextCrdt {
         pad_to_power_of_2(&mut prev_records, &fill_pk, &fill_pd);
         bitonic_sort(&mut prev_records, prev_key_size as u32)?;
 
-        // Scan: route prev values.
         let mut running_prev = dummy_id.clone();
         let padded_prev_len = prev_records.len();
         for i in 0..padded_prev_len {
@@ -832,9 +827,7 @@ impl ObliviousTextCrdt {
             running_prev = oblivious_dom::cmov_array(&is_query, dummy_id, &running_prev)?;
         }
 
-        // Sort back by (orig_index(5) + type(5)) = 10 bytes
         let sortback_prev_key_size = (2 * INT_SIZE) as usize; // 10
-        let fill_pk2 = Self::make_fill(sortback_prev_key_size)?;
         for i in 0..padded_prev_len {
             let d = &prev_records[i].data;
             let orig_idx = oblivious_dom::slice_array(d, ID_SIZE, ID_SIZE + INT_SIZE)?;
@@ -843,7 +836,6 @@ impl ObliviousTextCrdt {
         }
         bitonic_sort(&mut prev_records, sortback_prev_key_size as u32)?;
 
-        // Apply prev_edge_id from query records.
         for i in 0..total_edges {
             let query_idx = 2 * i + 1;
             if query_idx < prev_records.len() {
@@ -871,16 +863,12 @@ impl ObliviousTextCrdt {
         let iterations = (e as f64).log2().ceil() as usize;
         let dummy_id = &self.head_id;
 
-        // Key: join_key(32) + record_type(5) = 37 bytes
-        // Data: val_weight(5) + val_prev(32) + orig_index(5) + record_type(5) = 47 bytes
         let pj_key_size = (ID_SIZE + INT_SIZE) as usize; // 37
         let pj_data_size = (INT_SIZE + ID_SIZE + INT_SIZE + INT_SIZE) as usize; // 47
         let fill_pjk = Self::make_fill(pj_key_size)?;
         let fill_pjd = Self::make_fill(pj_data_size)?;
 
-        // Sort-back key: orig_index(5) + type(5) = 10 bytes
         let sortback_pj_key_size = (2 * INT_SIZE) as usize; // 10
-        let fill_pjk2 = Self::make_fill(sortback_pj_key_size)?;
 
         for _step in 0..iterations {
             let mut sort_entries: Vec<SortEntry> = Vec::with_capacity(2 * e);
@@ -888,14 +876,12 @@ impl ObliviousTextCrdt {
             for (i, edge) in edges.iter().enumerate() {
                 let orig_idx = oblivious_dom::create_int(i as i32)?;
 
-                // Data record
                 let key = oblivious_dom::pack(&[&edge.edge_id, &self.zero])?;
                 let data = oblivious_dom::pack(&[
                     &edge.accumulated_weight, &edge.prev_edge_id, &orig_idx, &self.zero,
                 ])?;
                 sort_entries.push(SortEntry::new(key, data));
 
-                // Query record
                 let key = oblivious_dom::pack(&[&edge.prev_edge_id, &self.one])?;
                 let data = oblivious_dom::pack(&[
                     &self.zero, dummy_id, &orig_idx, &self.one,
@@ -906,7 +892,6 @@ impl ObliviousTextCrdt {
             pad_to_power_of_2(&mut sort_entries, &fill_pjk, &fill_pjd);
             bitonic_sort(&mut sort_entries, pj_key_size as u32)?;
 
-            // Linear scan: route data into queries.
             let mut running_weight = self.zero.clone();
             let mut running_prev = dummy_id.clone();
             let padded_pj_len = sort_entries.len();
@@ -915,7 +900,9 @@ impl ObliviousTextCrdt {
                 let d = &sort_entries[i].data;
                 let val_weight = oblivious_dom::slice_array(d, 0, INT_SIZE)?;
                 let val_prev = oblivious_dom::slice_array(d, INT_SIZE, INT_SIZE + ID_SIZE)?;
-                let type_flag = oblivious_dom::slice_array(d, INT_SIZE + ID_SIZE + INT_SIZE, INT_SIZE + ID_SIZE + 2 * INT_SIZE)?;
+                let type_flag = oblivious_dom::slice_array(
+                    d, INT_SIZE + ID_SIZE + INT_SIZE, INT_SIZE + ID_SIZE + 2 * INT_SIZE,
+                )?;
 
                 let is_data = oblivious_dom::eq_int(&type_flag, &self.zero)?;
                 let is_query = oblivious_dom::eq_int(&type_flag, &self.one)?;
@@ -930,16 +917,16 @@ impl ObliviousTextCrdt {
                 sort_entries[i].data = oblivious_dom::pack(&[&new_weight, &new_prev, &orig_idx, &type_flag])?;
             }
 
-            // Sort back by (orig_index + type).
             for i in 0..padded_pj_len {
                 let d = &sort_entries[i].data;
                 let orig_idx = oblivious_dom::slice_array(d, INT_SIZE + ID_SIZE, INT_SIZE + ID_SIZE + INT_SIZE)?;
-                let type_flag = oblivious_dom::slice_array(d, INT_SIZE + ID_SIZE + INT_SIZE, INT_SIZE + ID_SIZE + 2 * INT_SIZE)?;
+                let type_flag = oblivious_dom::slice_array(
+                    d, INT_SIZE + ID_SIZE + INT_SIZE, INT_SIZE + ID_SIZE + 2 * INT_SIZE,
+                )?;
                 sort_entries[i].key = oblivious_dom::pack(&[&orig_idx, &type_flag])?;
             }
             bitonic_sort(&mut sort_entries, sortback_pj_key_size as u32)?;
 
-            // Apply updates from query records.
             for i in 0..e {
                 let query_idx = 2 * i + 1;
                 if query_idx < sort_entries.len() {
@@ -979,28 +966,41 @@ impl ObliviousTextCrdt {
         pad_to_power_of_2(&mut entries, &fill_pk, &fill_pd);
         bitonic_sort(&mut entries, pos_key_size as u32)?;
 
+        // Pre-compute tombstone lookup via oblivious join (replaces O(N^2) scan).
+        let n_elem = self.elements.len();
+        let real_count = n_elem * 2;
+
+        let mut join_data: Vec<(JsValue, JsValue)> = Vec::with_capacity(n_elem);
+        for elem in &self.elements {
+            let tombstone_int = oblivious_dom::cmov_array(
+                &elem.tombstone, &self.one, &self.zero,
+            )?;
+            join_data.push((elem.elem_id.clone(), tombstone_int));
+        }
+
+        let mut query_keys: Vec<JsValue> = Vec::with_capacity(real_count);
+        for i in 0..real_count.min(entries.len()) {
+            query_keys.push(oblivious_dom::slice_array(&entries[i].data, 0, ID_SIZE)?);
+        }
+
+        let joined = oblivious_join(&join_data, &query_keys, ID_SIZE, &self.zero, &self.one)?;
+
+        let mut tombstones: Vec<JsValue> = Vec::with_capacity(real_count);
+        for tombstone_int in &joined {
+            tombstones.push(oblivious_dom::eq_int(tombstone_int, &self.one)?);
+        }
+
         self.position_map.clear();
         let mut visible_counter = self.zero.clone();
 
-        let real_count = self.elements.len() * 2;
         for i in 0..real_count.min(entries.len()) {
             let elem_id = oblivious_dom::slice_array(&entries[i].data, 0, ID_SIZE)?;
             let is_down_val = oblivious_dom::slice_array(&entries[i].data, ID_SIZE, ID_SIZE + INT_SIZE)?;
             let is_down = oblivious_dom::eq_int(&is_down_val, &self.one)?;
 
-            let mut is_tombstoned = oblivious_dom::create_false()?;
-            for elem in &self.elements {
-                let id_match = oblivious_dom::eq_array(&elem.elem_id, &elem_id)?;
-                is_tombstoned = oblivious_dom::cmov_bool(
-                    &id_match,
-                    &elem.tombstone,
-                    &is_tombstoned,
-                )?;
-            }
-
             let is_visible = oblivious_dom::and_bool(
                 &is_down,
-                &oblivious_dom::not_bool(&is_tombstoned)?,
+                &oblivious_dom::not_bool(&tombstones[i])?,
             )?;
 
             let high_pos = Self::make_fill(INT_SIZE as usize)?;
@@ -1025,33 +1025,27 @@ impl ObliviousTextCrdt {
             return Ok(Vec::new());
         }
 
-        // Key: position(5) = 5 bytes
-        // Data: value (same size across all elements)
+        let n_queries = self.position_map.len();
+
+        // Look up value by elem_id via oblivious join (replaces O(N^2) scan).
+        let join_data: Vec<(JsValue, JsValue)> = self.elements.iter()
+            .map(|elem| (elem.elem_id.clone(), elem.value.clone()))
+            .collect();
+        let query_keys: Vec<JsValue> = self.position_map.iter()
+            .map(|(_, eid)| eid.clone())
+            .collect();
+
+        let values = oblivious_join(&join_data, &query_keys, ID_SIZE, &self.zero, &self.one)?;
+
         let pos_key_size = INT_SIZE as usize;
         let fill_pk = Self::make_fill(pos_key_size)?;
+        let value_size = oblivious_dom::ba_length(&self.elements[0].value);
+        let fill_pd = Self::make_fill(value_size as usize)?;
 
-        // Use first element's value as the initial placeholder so sizes match.
-        let value_placeholder = self.elements[0].value.clone();
-
-        let mut entries: Vec<SortEntry> = Vec::new();
-
-        for (pos, map_elem_id) in &self.position_map {
-            let mut value = value_placeholder.clone();
-            for elem in &self.elements {
-                let id_match = oblivious_dom::eq_array(&elem.elem_id, map_elem_id)?;
-                value = oblivious_dom::cmov_array(&id_match, &elem.value, &value)?;
-            }
-
-            entries.push(SortEntry::new(pos.clone(), value));
+        let mut entries: Vec<SortEntry> = Vec::with_capacity(n_queries);
+        for (i, (pos, _)) in self.position_map.iter().enumerate() {
+            entries.push(SortEntry::new(pos.clone(), values[i].clone()));
         }
-
-        if entries.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Fill data must match value size. Use first element's value as reference
-        // — all values have the same size since they're all single characters.
-        let fill_pd = value_placeholder;
 
         pad_to_power_of_2(&mut entries, &fill_pk, &fill_pd);
         bitonic_sort(&mut entries, pos_key_size as u32)?;

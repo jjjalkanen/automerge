@@ -11,7 +11,6 @@
       padding: 0.5em;
       margin: 0;
     }
-    h2 { color: #00d230; margin: 0.3em 0; font-size: 16px; }
     #status { color: #888; margin-bottom: 0.5em; font-size: 13px; }
     #editor {
       border: 1px solid #555;
@@ -33,7 +32,6 @@
   </style>
 </head>
 <body>
-  <h2 id="title">Editor</h2>
   <div id="status">Initializing WASM…</div>
   <div id="editor" tabindex="0"></div>
 
@@ -41,13 +39,12 @@
     import init, { ObliviousText, initSyncState, setObliviousRef } from './automerge_wasm.js';
 
     const editorId = new URLSearchParams(location.search).get('id') || '?';
-    document.getElementById('title').textContent = `Editor ${editorId}`;
 
     const status = document.getElementById('status');
     const editor = document.getElementById('editor');
 
     if (!window.oblivious) {
-      status.textContent = 'window.oblivious not available';
+      status.textContent = 'Enable dom.oblivious.enabled and dom.encryptedtext.enabled in about:config';
       status.classList.add('error');
       throw new Error('window.oblivious not available');
     }

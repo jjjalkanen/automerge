@@ -16,62 +16,76 @@
       flex-direction: column;
     }
     h1 { color: #00d230; margin: 0 0 0.5em; font-size: 20px; }
-    #container {
-      display: flex;
+    .three-column {
+      display: grid;
+      grid-template-columns: 2fr 3fr 2fr;
       flex: 1;
       gap: 1em;
       min-height: 0;
     }
-    .panel {
+    .col {
       display: flex;
       flex-direction: column;
       min-height: 0;
+      min-width: 0;
     }
-    .panel.left, .panel.right {
-      flex: 35;
+    .sync-editor {
+      border: 1px solid #555;
+      padding: 0.5em;
+      background: #1a1a1a;
+      cursor: text;
+      outline: none;
+      flex: 1;
+      font-family: monospace;
+      min-width: 0;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      overflow-y: auto;
     }
-    .panel.center {
-      flex: 30;
+    .sync-editor:focus-within {
+      border-color: #00d230;
     }
-    .panel h2 {
+    securetext {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: none;
+      outline: none;
+      cursor: text;
+      font-family: monospace;
+      font-size: 18px;
+      line-height: 1.5;
+      color: inherit;
+      min-width: unset;
+      min-height: unset;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    .editor-status {
       color: #888;
       font-size: 13px;
-      margin: 0 0 0.5em;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
+      margin-bottom: 0.3em;
     }
-    iframe {
-      flex: 1;
-      border: 1px solid #333;
-      background: #111;
-      min-height: 0;
-    }
-    #log {
+    #sync-log {
       flex: 1;
       overflow-y: auto;
       border: 1px solid #333;
       background: #0d0d0d;
       padding: 0.5em;
       font-size: 12px;
+      font-family: monospace;
       min-height: 0;
     }
     .log-entry {
-      margin-bottom: 0.8em;
-      padding: 0.4em 0.5em;
+      margin-bottom: 0.6em;
+      padding: 0.3em 0.5em;
       border-left: 3px solid #333;
     }
     .log-entry.a-to-b { border-left-color: #4af; }
     .log-entry.b-to-a { border-left-color: #f4a; }
-    .log-header {
-      color: #aaa;
-      margin-bottom: 0.3em;
-    }
+    .log-header { color: #aaa; margin-bottom: 0.2em; }
     .log-header .direction { font-weight: bold; }
-    .log-field {
-      color: #666;
-      word-break: break-all;
-      line-height: 1.4;
-    }
+    .log-field { color: #666; word-break: break-all; line-height: 1.3; }
     .log-field .label { color: #888; }
     .log-field .value { color: #a0ffa0; }
     #hint {
@@ -84,54 +98,263 @@
 </head>
 <body>
   <h1>Automerge Oblivious Sync Demo</h1>
-  <div id="container">
-    <div class="panel left">
-      <h2>Editor A</h2>
-      <iframe id="editorA" src="sync-editor.html?id=A"></iframe>
+  <div id="pref-warning" style="display:none; background:#331; border:1px solid #663; color:#ffa; padding:0.6em 1em; margin-bottom:0.5em; font-size:13px;">
+    Required prefs not enabled. In <b>about:config</b>, set <code>dom.oblivious.enabled</code> and <code>dom.encryptedtext.enabled</code> to <b>true</b>, then reload.
+  </div>
+  <script>
+    if (!window.oblivious || !document.createElement('securetext').setObliviousCursor) {
+      document.getElementById('pref-warning').style.display = 'block';
+    }
+  </script>
+  <div class="three-column">
+    <div class="col">
+      <div class="editor-status" id="status-a">Editor A — initializing...</div>
+      <div class="sync-editor" id="editor-a" tabindex="0"></div>
     </div>
-    <div class="panel center">
-      <h2>Sync Log (V1 protocol)</h2>
-      <div id="log"></div>
+    <div class="col">
+      <div id="sync-log"></div>
     </div>
-    <div class="panel right">
-      <h2>Editor B</h2>
-      <iframe id="editorB" src="sync-editor.html?id=B"></iframe>
+    <div class="col">
+      <div class="editor-status" id="status-b">Editor B — initializing...</div>
+      <div class="sync-editor" id="editor-b" tabindex="0"></div>
     </div>
   </div>
-  <div id="hint">Type in either editor. Edits sync via Automerge V1 sync protocol — messages shown in center log.</div>
+  <div id="hint">Type in either editor. Edits sync via Automerge V1 sync protocol.</div>
 
-  <script>
-    const editorA = document.getElementById('editorA');
-    const editorB = document.getElementById('editorB');
-    const log = document.getElementById('log');
-    let msgCount = 0;
+  <script type="module">
+    import init, { ObliviousText, initSyncState, setObliviousRef } from './automerge_wasm.js';
 
-    function appendLog(from, syncMsg) {
-      msgCount++;
-      const to = from === 'A' ? 'B' : 'A';
-      const cls = from === 'A' ? 'a-to-b' : 'b-to-a';
-      const bytes = syncMsg.length;
+    const statusA = document.getElementById('status-a');
+    const statusB = document.getElementById('status-b');
+    const editorDivA = document.getElementById('editor-a');
+    const editorDivB = document.getElementById('editor-b');
+    const syncLog = document.getElementById('sync-log');
 
-      const entry = document.createElement('div');
-      entry.className = `log-entry ${cls}`;
-      entry.innerHTML =
-        `<div class="log-header"><span class="direction">#${msgCount} ${from} → ${to}</span></div>` +
-        `<div class="log-field"><span class="label">type:</span> <span class="value">0x${syncMsg[0].toString(16)} (V1 sync)</span></div>` +
-        `<div class="log-field"><span class="label">size:</span> <span class="value">${bytes} bytes</span></div>`;
+    if (!window.oblivious) {
+      statusA.textContent = 'Enable dom.oblivious.enabled and dom.encryptedtext.enabled in about:config';
+      statusB.textContent = '';
+    } else {
+      const oc = window.oblivious;
 
-      log.appendChild(entry);
-      log.scrollTop = log.scrollHeight;
+      try {
+        await init();
+        setObliviousRef(oc);
+
+        const actorIdA = 'A-' + Math.random().toString(36).slice(2, 10);
+        const actorIdB = 'B-' + Math.random().toString(36).slice(2, 10);
+        const crdtA = new ObliviousText(actorIdA);
+        const crdtB = new ObliviousText(actorIdB);
+
+        let syncStateA = initSyncState();
+        let syncStateB = initSyncState();
+
+        const secureElA = document.createElement('securetext');
+        editorDivA.appendChild(secureElA);
+        const secureElB = document.createElement('securetext');
+        editorDivB.appendChild(secureElB);
+
+        let cursorA = oc.createInt(0);
+        let cursorB = oc.createInt(0);
+        let msgCount = 0;
+
+        // Expose globals for E2E test harness
+        window._oc = oc;
+        window._crdt = crdtA;
+        window._crdtA = crdtA;
+        window._crdtB = crdtB;
+        window._cursor = cursorA;
+
+        function decodeLEB128(data, offset) {
+          let result = 0, shift = 0, pos = offset;
+          while (pos < data.length) {
+            const byte = data[pos];
+            result |= (byte & 0x7f) << shift;
+            pos++;
+            if ((byte & 0x80) === 0) break;
+            shift += 7;
+          }
+          return [result, pos];
+        }
+
+        function bytesToBase64(bytes) {
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          return btoa(binary);
+        }
+
+        function b64preview(data, offset, len) {
+          return bytesToBase64(data.slice(offset, offset + len)).slice(0, 5) + '...';
+        }
+
+        const ENC_32 = 64, ENC_5 = 37, ENC_1 = 33;
+
+        function decodeSyncMsg(msg) {
+          let pos = 1; // skip 0x42 type byte
+          let count;
+          [count, pos] = decodeLEB128(msg, pos);
+          const numHeads = count;
+          pos += count * 32;
+          [count, pos] = decodeLEB128(msg, pos);
+          const numNeed = count;
+          pos += count * 32;
+          [count, pos] = decodeLEB128(msg, pos);
+          const numHave = count;
+          for (let i = 0; i < count; i++) {
+            let syncCount;
+            [syncCount, pos] = decodeLEB128(msg, pos);
+            pos += syncCount * 32;
+            let bloomLen;
+            [bloomLen, pos] = decodeLEB128(msg, pos);
+            pos += bloomLen;
+          }
+          [count, pos] = decodeLEB128(msg, pos);
+          const changes = [];
+          for (let i = 0; i < count; i++) {
+            let changeLen;
+            [changeLen, pos] = decodeLEB128(msg, pos);
+            changes.push(msg.slice(pos, pos + changeLen));
+            pos += changeLen;
+          }
+          return { numHeads, numNeed, numHave, changes };
+        }
+
+        function appendLog(from, syncMsg) {
+          msgCount++;
+          const to = from === 'A' ? 'B' : 'A';
+          const cls = from === 'A' ? 'a-to-b' : 'b-to-a';
+          const parsed = decodeSyncMsg(syncMsg);
+          const entry = document.createElement('div');
+          entry.className = `log-entry ${cls}`;
+
+          let html = `<div class="log-header"><span class="direction">#${msgCount} ${from} → ${to}</span></div>`;
+          html += `<div class="log-field"><span class="label">heads:</span> <span class="value">${parsed.numHeads}</span>  `;
+          html += `<span class="label">need:</span> <span class="value">${parsed.numNeed}</span>  `;
+          html += `<span class="label">have:</span> <span class="value">${parsed.numHave}</span></div>`;
+
+          if (parsed.changes.length === 0) {
+            html += `<div class="log-field"><span class="label">changes:</span> <span class="value">0 (ack)</span></div>`;
+          } else {
+            html += `<div class="log-field"><span class="label">changes:</span> <span class="value">${parsed.changes.length}</span></div>`;
+            for (const change of parsed.changes) {
+              const view = new DataView(change.buffer, change.byteOffset, change.byteLength);
+              const lamport = Number(view.getBigUint64(0));
+              const actorLen = change[8];
+              const actor = new TextDecoder().decode(change.slice(9, 9 + actorLen));
+              let p = 9 + actorLen;
+              const eid = b64preview(change, p, ENC_32); p += ENC_32;
+              const pid = b64preview(change, p, ENC_32); p += ENC_32;
+              const sk  = b64preview(change, p, ENC_32); p += ENC_32;
+              const val = b64preview(change, p, ENC_5);  p += ENC_5;
+              const vld = b64preview(change, p, ENC_1);  p += ENC_1;
+              const tei = b64preview(change, p, ENC_32); p += ENC_32;
+              const tvl = b64preview(change, p, ENC_1);  p += ENC_1;
+              const tvv = b64preview(change, p, ENC_5);
+              html += `<div class="log-field">  <span class="label">lamport:</span> <span class="value">${lamport}</span>  <span class="label">actor:</span> <span class="value">${actor}</span></div>`;
+              html += `<div class="log-field">  <span class="label">elem_id:</span> <span class="value">${eid}</span>  <span class="label">predecessor_id:</span> <span class="value">${pid}</span>  <span class="label">sort_key:</span> <span class="value">${sk}</span></div>`;
+              html += `<div class="log-field">  <span class="label">value:</span> <span class="value">${val}</span>  <span class="label">valid:</span> <span class="value">${vld}</span></div>`;
+              html += `<div class="log-field">  <span class="label">target_elem_id:</span> <span class="value">${tei}</span>  <span class="label">target_valid:</span> <span class="value">${tvl}</span>  <span class="label">target_value:</span> <span class="value">${tvv}</span></div>`;
+            }
+          }
+
+          entry.innerHTML = html;
+          syncLog.appendChild(entry);
+          syncLog.scrollTop = syncLog.scrollHeight;
+        }
+
+        function doSync() {
+          let rounds = 0;
+          const maxRounds = 10;
+          while (rounds < maxRounds) {
+            rounds++;
+            let progressed = false;
+
+            const msgA = crdtA.generateSyncMessage(syncStateA);
+            if (msgA) {
+              appendLog('A', msgA);
+              crdtB.receiveSyncMessage(syncStateB, msgA);
+              renderEditor(crdtB, secureElB, cursorB, 'B', statusB);
+              progressed = true;
+            }
+
+            const msgB = crdtB.generateSyncMessage(syncStateB);
+            if (msgB) {
+              appendLog('B', msgB);
+              crdtA.receiveSyncMessage(syncStateA, msgB);
+              renderEditor(crdtA, secureElA, cursorA, 'A', statusA);
+              progressed = true;
+            }
+
+            if (!progressed) break;
+          }
+        }
+
+        function renderEditor(crdt, secureEl, cursor, label, statusEl) {
+          try {
+            const buffer = crdt.getRenderBuffer();
+            if (buffer.length === 0) {
+              secureEl.value = '';
+            } else {
+              let combined = buffer[0];
+              for (let i = 1; i < buffer.length; i++) {
+                combined = oc.concatArrays(combined, buffer[i]);
+              }
+              secureEl.value = combined.toBase64();
+              secureEl.setObliviousCursor(cursor);
+            }
+            statusEl.textContent = `Editor ${label} — ${buffer.length} chars — ready`;
+          } catch (e) {
+            console.error(`[render ${label}]`, e);
+            statusEl.textContent = `Editor ${label} — render error: ${e.message}`;
+          }
+        }
+
+        secureElA.addEventListener('securekeydown', (e) => {
+          if (e.ctrlKey || e.metaKey || e.altKey) return;
+          try {
+            const result = crdtA.obliviousEdit(e.charCode, cursorA);
+            cursorA = result.newCursor;
+            secureElA.value = result.content;
+            secureElA.setObliviousCursor(cursorA);
+            statusA.textContent = 'Editor A — ready';
+            doSync();
+          } catch (err) {
+            console.error('[Editor A]', err);
+            statusA.textContent = `Editor A — error: ${err.message}`;
+          }
+        });
+
+        secureElB.addEventListener('securekeydown', (e) => {
+          if (e.ctrlKey || e.metaKey || e.altKey) return;
+          try {
+            const result = crdtB.obliviousEdit(e.charCode, cursorB);
+            cursorB = result.newCursor;
+            secureElB.value = result.content;
+            secureElB.setObliviousCursor(cursorB);
+            statusB.textContent = 'Editor B — ready';
+            doSync();
+          } catch (err) {
+            console.error('[Editor B]', err);
+            statusB.textContent = `Editor B — error: ${err.message}`;
+          }
+        });
+
+        secureElA.addEventListener('click', () => { cursorA = secureElA.getSelectionStart(); });
+        secureElB.addEventListener('click', () => { cursorB = secureElB.getSelectionStart(); });
+
+        for (const ch of 'Hello') {
+          const kc = oc.createInt(ch.charCodeAt(0));
+          const result = crdtA.obliviousEdit(kc, cursorA);
+          cursorA = result.newCursor;
+        }
+        renderEditor(crdtA, secureElA, cursorA, 'A', statusA);
+        doSync();
+
+      } catch (e) {
+        console.error('[initSyncDemo]', e);
+        statusA.textContent = `Init error: ${e.message}`;
+        statusB.textContent = '';
+      }
     }
-
-    window.addEventListener('message', (event) => {
-      const { from, syncMsg } = event.data || {};
-      if (!from || !syncMsg) return;
-
-      appendLog(from, syncMsg);
-
-      const target = from === 'A' ? editorB : editorA;
-      target.contentWindow.postMessage({ syncMsg }, '*');
-    });
   </script>
 </body>
 </html>

@@ -311,7 +311,7 @@
         secureElA.addEventListener('securekeydown', (e) => {
           if (e.ctrlKey || e.metaKey || e.altKey) return;
           try {
-            const result = crdtA.obliviousEdit(e.charCode, cursorA);
+            const result = crdtA.obliviousEdit(e.charCode, e.actionType, cursorA);
             cursorA = result.newCursor;
             secureElA.value = result.content;
             secureElA.setObliviousCursor(cursorA);
@@ -326,7 +326,7 @@
         secureElB.addEventListener('securekeydown', (e) => {
           if (e.ctrlKey || e.metaKey || e.altKey) return;
           try {
-            const result = crdtB.obliviousEdit(e.charCode, cursorB);
+            const result = crdtB.obliviousEdit(e.charCode, e.actionType, cursorB);
             cursorB = result.newCursor;
             secureElB.value = result.content;
             secureElB.setObliviousCursor(cursorB);
@@ -341,9 +341,10 @@
         secureElA.addEventListener('click', () => { cursorA = secureElA.getSelectionStart(); });
         secureElB.addEventListener('click', () => { cursorB = secureElB.getSelectionStart(); });
 
+        const insertAction = oc.fromByte(1);
         for (const ch of 'Hello') {
           const kc = oc.createInt(ch.charCodeAt(0));
-          const result = crdtA.obliviousEdit(kc, cursorA);
+          const result = crdtA.obliviousEdit(kc, insertAction, cursorA);
           cursorA = result.newCursor;
         }
         renderEditor(crdtA, secureElA, cursorA, 'A', statusA);

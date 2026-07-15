@@ -1070,26 +1070,31 @@ impl ObliviousTextCrdt {
 
     // ── Oblivious edit (all keystroke logic) ─────────────────────────
 
-    const KC_BACKSPACE: i32 = 8;
-    const KC_DELETE: i32 = 46;
-    const KC_LEFT: i32 = 37;
-    const KC_RIGHT: i32 = 39;
+    const ACTION_NOOP: u8 = 0;
+    const ACTION_INSERT: u8 = 1;
+    const ACTION_BACKSPACE: u8 = 2;
+    const ACTION_DELETE: u8 = 3;
+    const ACTION_ARROW_LEFT: u8 = 4;
+    const ACTION_ARROW_RIGHT: u8 = 5;
 
+    /// `char_code`: the character's Unicode code point (from SecureKeyboardEvent.charCode)
+    /// `action_type`: the action classification (from SecureKeyboardEvent.actionType, Obliv8)
     pub fn oblivious_edit(
         &mut self,
-        key_code: &JsValue,
+        char_code: &JsValue,
+        action_type: &JsValue,
         cursor: &JsValue,
     ) -> Result<EditResult, JsValue> {
-        // 1. Classify key
-        let kc_bs = oblivious_dom::create_int(Self::KC_BACKSPACE)?;
-        let kc_del = oblivious_dom::create_int(Self::KC_DELETE)?;
-        let kc_left = oblivious_dom::create_int(Self::KC_LEFT)?;
-        let kc_right = oblivious_dom::create_int(Self::KC_RIGHT)?;
+        // 1. Classify action using Obliv8 byte comparisons
+        let at_bs = oblivious_dom::from_byte(Self::ACTION_BACKSPACE)?;
+        let at_del = oblivious_dom::from_byte(Self::ACTION_DELETE)?;
+        let at_left = oblivious_dom::from_byte(Self::ACTION_ARROW_LEFT)?;
+        let at_right = oblivious_dom::from_byte(Self::ACTION_ARROW_RIGHT)?;
 
-        let is_bs = oblivious_dom::eq_int(key_code, &kc_bs)?;
-        let is_del = oblivious_dom::eq_int(key_code, &kc_del)?;
-        let is_left = oblivious_dom::eq_int(key_code, &kc_left)?;
-        let is_right = oblivious_dom::eq_int(key_code, &kc_right)?;
+        let is_bs = oblivious_dom::eq_byte(action_type, &at_bs)?;
+        let is_del = oblivious_dom::eq_byte(action_type, &at_del)?;
+        let is_left = oblivious_dom::eq_byte(action_type, &at_left)?;
+        let is_right = oblivious_dom::eq_byte(action_type, &at_right)?;
         let is_arrow = oblivious_dom::or_bool(&is_left, &is_right)?;
         let is_control = oblivious_dom::or_bool(
             &oblivious_dom::or_bool(&is_bs, &is_del)?,
@@ -1097,8 +1102,8 @@ impl ObliviousTextCrdt {
         )?;
         let is_printable = oblivious_dom::not_bool(&is_control)?;
 
-        // Pack keyCode into a fixed-size ObliviousByteArray for uniform element values
-        let key_value = oblivious_dom::pack(&[key_code])?;
+        // Pack charCode (case-correct Unicode code point) as the element value
+        let key_value = oblivious_dom::pack(&[char_code])?;
         let invalid_value = oblivious_dom::create_byte_array(&[0u8; 5])?;
 
         // 2. Always insert an INVALID element at cursor position

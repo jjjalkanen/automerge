@@ -203,8 +203,9 @@ async function typeInEditor(driver, iframeId, text) {
         const oc = window._oc;
         const crdt = window._crdt;
         const charCode = arguments[0].charCodeAt(0);
-        const keyCode = oc.createInt(charCode);
-        const result = crdt.obliviousEdit(keyCode, window._cursor);
+        const cc = oc.createInt(charCode);
+        const insertAction = oc.fromByte(1);
+        const result = crdt.obliviousEdit(cc, insertAction, window._cursor);
         window._cursor = result.newCursor;
         window._sendSync(result.ops);
       } catch (e) {
@@ -223,8 +224,9 @@ async function pressBackspace(driver, iframeId, times = 1) {
     await driver.executeScript(`
       const oc = window._oc;
       const crdt = window._crdt;
-      const keyCode = oc.createInt(8);
-      const result = crdt.obliviousEdit(keyCode, window._cursor);
+      const cc = oc.createInt(0);
+      const bsAction = oc.fromByte(2);
+      const result = crdt.obliviousEdit(cc, bsAction, window._cursor);
       window._cursor = result.newCursor;
       window._sendSync(result.ops);
     `);
@@ -240,8 +242,9 @@ async function pressArrowLeft(driver, iframeId, times = 1) {
     await driver.executeScript(`
       const oc = window._oc;
       const crdt = window._crdt;
-      const keyCode = oc.createInt(37);
-      const result = crdt.obliviousEdit(keyCode, window._cursor);
+      const cc = oc.createInt(0);
+      const leftAction = oc.fromByte(4);
+      const result = crdt.obliviousEdit(cc, leftAction, window._cursor);
       window._cursor = result.newCursor;
     `);
   }

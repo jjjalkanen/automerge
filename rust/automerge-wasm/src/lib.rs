@@ -2453,10 +2453,11 @@ impl ObliviousText {
     }
 
     #[wasm_bindgen(js_name = "obliviousEdit")]
-    pub fn oblivious_edit(&self, key_code: &JsValue, cursor: &JsValue) -> Result<Object, JsValue> {
-        let kc = oblivious_dom::wrap_handle(key_code);
+    pub fn oblivious_edit(&self, char_code: &JsValue, action_type: &JsValue, cursor: &JsValue) -> Result<Object, JsValue> {
+        let cc = oblivious_dom::wrap_handle(char_code);
+        let at = oblivious_dom::wrap_handle(action_type);
         let c = oblivious_dom::wrap_handle(cursor);
-        let result = self.inner.borrow_mut().oblivious_edit(&kc, &c)?;
+        let result = self.inner.borrow_mut().oblivious_edit(&cc, &at, &c)?;
 
         let obj = Object::new();
         js_set(&obj, "newCursor", &oblivious_dom::unwrap_handle(&result.new_cursor))?;

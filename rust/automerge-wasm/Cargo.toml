@@ -42,7 +42,7 @@ version = "= 0.2.108"
 features = ["serde-serialize", "std"]
 
 [package.metadata.wasm-pack.profile.release]
-# wasm-opt = false
+wasm-opt = false
 
 [package.metadata.wasm-pack.profile.profiling]
 wasm-opt = false

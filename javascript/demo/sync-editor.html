@@ -90,9 +90,10 @@
 
     // Only Editor A seeds initial text; B receives it via sync
     if (editorId === 'A') {
+      const insertAction = oc.fromByte(1);
       for (const ch of 'Hello') {
         const kc = oc.createInt(ch.charCodeAt(0));
-        const result = crdt.obliviousEdit(kc, window._cursor);
+        const result = crdt.obliviousEdit(kc, insertAction, window._cursor);
         window._cursor = result.newCursor;
       }
       renderFromBuffer();
@@ -115,7 +116,7 @@
     secureEl.addEventListener('securekeydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       try {
-        const result = crdt.obliviousEdit(e.charCode, window._cursor);
+        const result = crdt.obliviousEdit(e.charCode, e.actionType, window._cursor);
         window._cursor = result.newCursor;
         secureEl.value = result.content;
         secureEl.setObliviousCursor(window._cursor);

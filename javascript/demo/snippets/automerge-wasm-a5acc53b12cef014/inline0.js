@@ -38,3 +38,5 @@ export function oc_wrap(o) { return S(o); }
 export function oc_debug_str(i) { C('debug_str',[i]); return G(i).toBase64(); }
 export function oc_ba_length(i) { C('ba_length',[i]); return G(i).length; }
 export function oc_bitonic_sort(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
+export function oc_from_byte(v) { return S(_oc.fromByte(v)); }
+export function oc_eq_byte(a, b) { C('eq_byte',[a,b]); return S(_oc.eq(G(a), G(b))); }

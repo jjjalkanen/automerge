@@ -46,6 +46,8 @@ export function oc_wrap(o) { return S(o); }
 export function oc_debug_str(i) { C('debug_str',[i]); return G(i).toBase64(); }
 export function oc_ba_length(i) { C('ba_length',[i]); return G(i).length; }
 export function oc_bitonic_sort(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
+export function oc_from_byte(v) { return S(_oc.fromByte(v)); }
+export function oc_eq_byte(a, b) { C('eq_byte',[a,b]); return S(_oc.eq(G(a), G(b))); }
 ")]
 extern "C" {
     fn oc_set(r: &JsValue);
@@ -78,6 +80,8 @@ extern "C" {
     fn oc_debug_str(i: JsValue) -> JsValue;
     fn oc_ba_length(i: JsValue) -> JsValue;
     fn oc_bitonic_sort(ids: &JsValue, key_size: u32);
+    fn oc_from_byte(v: JsValue) -> JsValue;
+    fn oc_eq_byte(a: JsValue, b: JsValue) -> JsValue;
     fn oc_last_err() -> JsValue;
 }
 
@@ -99,6 +103,11 @@ pub fn wrap_handle(v: &JsValue) -> JsValue { oc_wrap(v) }
 
 /// Clone a handle (creates a new handle pointing to the same JS object).
 pub fn clone_handle(v: &JsValue) -> JsValue { oc_clone(hv(v)) }
+
+// ── Obliv8 ─────────────────────────────────────────────────────────
+
+pub fn from_byte(v: u8) -> Result<JsValue, JsValue> { Ok(oc_from_byte(JsValue::from(v))) }
+pub fn eq_byte(a: &JsValue, b: &JsValue) -> Result<JsValue, JsValue> { Ok(oc_eq_byte(hv(a), hv(b))) }
 
 // ── ObliviousInt ────────────────────────────────────────────────────
 

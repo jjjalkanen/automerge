@@ -49,7 +49,7 @@ pub fn bitonic_sort(entries: &mut [SortEntry], key_size: u32) -> Result<(), JsVa
         arr.set(i as u32, h.clone());
     }
 
-    bitonic_sort_native(&arr.into(), key_size);
+    bitonic_sort_native(&arr.into(), key_size)?;
 
     let total_size = ba_length(&combined[0]);
     for (i, entry) in entries.iter_mut().enumerate() {

@@ -154,7 +154,11 @@
         editorDivB.appendChild(secureElB);
 
         let cursorA = oc.createInt(0);
+        let cursorPosA = 0;
         let cursorB = oc.createInt(0);
+        let cursorPosB = 0;
+        let visibleCountA = 0;
+        let visibleCountB = 0;
         let msgCount = 0;
 
         // Expose globals for E2E test harness
@@ -308,11 +312,22 @@
           }
         }
 
+        function updatePlainCursor(action, cursorPos, visibleCount) {
+          let newPos = cursorPos, newCount = visibleCount;
+          if (action === 1) { newPos++; newCount++; }        // INSERT
+          else if (action === 2 && cursorPos > 0) { newPos--; newCount--; }  // BACKSPACE
+          else if (action === 3 && cursorPos < visibleCount) { newCount--; } // DELETE
+          return { pos: newPos, count: newCount };
+        }
+
         secureElA.addEventListener('securekeydown', (e) => {
           if (e.ctrlKey || e.metaKey || e.altKey) return;
           try {
             const result = crdtA.obliviousEdit(e.charCode, e.actionType, cursorA);
             cursorA = result.newCursor;
+            const u = updatePlainCursor(e.plainAction, cursorPosA, visibleCountA);
+            cursorPosA = u.pos;
+            visibleCountA = u.count;
             secureElA.value = result.content;
             secureElA.setObliviousCursor(cursorA);
             statusA.textContent = 'Editor A — ready';
@@ -328,6 +343,9 @@
           try {
             const result = crdtB.obliviousEdit(e.charCode, e.actionType, cursorB);
             cursorB = result.newCursor;
+            const u = updatePlainCursor(e.plainAction, cursorPosB, visibleCountB);
+            cursorPosB = u.pos;
+            visibleCountB = u.count;
             secureElB.value = result.content;
             secureElB.setObliviousCursor(cursorB);
             statusB.textContent = 'Editor B — ready';
@@ -338,6 +356,29 @@
           }
         });
 
+        for (const dir of ['securecursorleft', 'securecursorright']) {
+          secureElA.addEventListener(dir, () => {
+            if (dir === 'securecursorleft' && cursorPosA > 0) {
+              cursorPosA--;
+              cursorA = oc.createInt(cursorPosA);
+            } else if (dir === 'securecursorright' && cursorPosA < visibleCountA) {
+              cursorPosA++;
+              cursorA = oc.createInt(cursorPosA);
+            }
+            secureElA.setObliviousCursor(cursorA);
+          });
+          secureElB.addEventListener(dir, () => {
+            if (dir === 'securecursorleft' && cursorPosB > 0) {
+              cursorPosB--;
+              cursorB = oc.createInt(cursorPosB);
+            } else if (dir === 'securecursorright' && cursorPosB < visibleCountB) {
+              cursorPosB++;
+              cursorB = oc.createInt(cursorPosB);
+            }
+            secureElB.setObliviousCursor(cursorB);
+          });
+        }
+
         secureElA.addEventListener('click', () => { cursorA = secureElA.getSelectionStart(); });
         secureElB.addEventListener('click', () => { cursorB = secureElB.getSelectionStart(); });
 
@@ -346,6 +387,8 @@
           const kc = oc.createInt(ch.charCodeAt(0));
           const result = crdtA.obliviousEdit(kc, insertAction, cursorA);
           cursorA = result.newCursor;
+          cursorPosA++;
+          visibleCountA++;
         }
         renderEditor(crdtA, secureElA, cursorA, 'A', statusA);
         doSync();

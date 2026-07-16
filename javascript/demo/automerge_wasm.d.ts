@@ -408,13 +408,15 @@ export class ObliviousText {
     [Symbol.dispose](): void;
     applyRemoteOp(lamport: number, actor: string, elem_id: any, predecessor_id: any, value: any, sort_key: any, valid: any, target_elem_id: any, target_valid: any, target_value: any): void;
     debugCleartext(): string;
+    generateSyncMessage(state: SyncState): any;
     getActorId(): string;
     getLamport(): number;
     getRenderBuffer(): Array<any>;
     lastError(): string;
     materialize(): void;
     constructor(actor_id: string);
-    obliviousEdit(key_code: any, cursor: any): object;
+    obliviousEdit(char_code: any, action_type: any, cursor: any): object;
+    receiveSyncMessage(state: SyncState, message: Uint8Array): void;
 }
 
 export class SyncState {
@@ -560,7 +562,9 @@ export interface InitOutput {
     readonly oblivioustext_materialize: (a: number) => [number, number];
     readonly oblivioustext_getActorId: (a: number) => [number, number];
     readonly oblivioustext_getLamport: (a: number) => number;
-    readonly oblivioustext_obliviousEdit: (a: number, b: any, c: any) => [number, number, number];
+    readonly oblivioustext_obliviousEdit: (a: number, b: any, c: any, d: any) => [number, number, number];
+    readonly oblivioustext_generateSyncMessage: (a: number, b: number) => any;
+    readonly oblivioustext_receiveSyncMessage: (a: number, b: number, c: any) => [number, number];
     readonly oblivioustext_debugCleartext: (a: number) => [number, number, number, number];
     readonly oblivioustext_lastError: (a: number) => [number, number];
     readonly setObliviousRef: (a: any) => void;

@@ -66,6 +66,8 @@
     window._oc = oc;
     window._crdt = crdt;
     window._cursor = oc.createInt(0);
+    window._cursorPos = 0;
+    window._visibleCount = 0;
 
     function renderFromBuffer() {
       try {
@@ -95,6 +97,8 @@
         const kc = oc.createInt(ch.charCodeAt(0));
         const result = crdt.obliviousEdit(kc, insertAction, window._cursor);
         window._cursor = result.newCursor;
+        window._cursorPos++;
+        window._visibleCount++;
       }
       renderFromBuffer();
       setTimeout(() => sendSync(), 100);
@@ -113,11 +117,22 @@
     window._renderFromBuffer = renderFromBuffer;
 
     // Keystroke handling
+    function updatePlainCursor(action, cursorPos, visibleCount) {
+      let newPos = cursorPos, newCount = visibleCount;
+      if (action === 1) { newPos++; newCount++; }
+      else if (action === 2 && cursorPos > 0) { newPos--; newCount--; }
+      else if (action === 3 && cursorPos < visibleCount) { newCount--; }
+      return { pos: newPos, count: newCount };
+    }
+
     secureEl.addEventListener('securekeydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       try {
         const result = crdt.obliviousEdit(e.charCode, e.actionType, window._cursor);
         window._cursor = result.newCursor;
+        const u = updatePlainCursor(e.plainAction, window._cursorPos, window._visibleCount);
+        window._cursorPos = u.pos;
+        window._visibleCount = u.count;
         secureEl.value = result.content;
         secureEl.setObliviousCursor(window._cursor);
         status.textContent = `Editor ${editorId} — ready`;
@@ -127,6 +142,19 @@
         status.textContent = `Editor ${editorId} — error: ${err.message}`;
       }
     });
+
+    for (const dir of ['securecursorleft', 'securecursorright']) {
+      secureEl.addEventListener(dir, () => {
+        if (dir === 'securecursorleft' && window._cursorPos > 0) {
+          window._cursorPos--;
+          window._cursor = oc.createInt(window._cursorPos);
+        } else if (dir === 'securecursorright' && window._cursorPos < window._visibleCount) {
+          window._cursorPos++;
+          window._cursor = oc.createInt(window._cursorPos);
+        }
+        secureEl.setObliviousCursor(window._cursor);
+      });
+    }
 
     secureEl.addEventListener('click', () => {
       window._cursor = secureEl.getSelectionStart();

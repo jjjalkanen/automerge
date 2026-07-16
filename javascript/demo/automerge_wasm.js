@@ -1,5 +1,5 @@
 /* @ts-self-types="./automerge_wasm.d.ts" */
-import { oc_bitonic_sort, oc_enc_safe } from './snippets/automerge-wasm-a5acc53b12cef014/inline0.js';
+import { oc_bitonic_sort_safe, oc_enc_safe } from './snippets/automerge-wasm-a5acc53b12cef014/inline0.js';
 
 export class Automerge {
     static __wrap(ptr) {
@@ -1241,6 +1241,7 @@ import * as import22 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js
 import * as import23 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
 import * as import24 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
 import * as import25 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
+import * as import26 from "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js"
 
 function __wbg_get_imports() {
     const import0 = {
@@ -1526,9 +1527,9 @@ function __wbg_get_imports() {
             const ret = arg0.next;
             return ret;
         },
-        __wbg_oc_bitonic_sort_edfeb5d07eb94e5b: function(arg0, arg1) {
-            oc_bitonic_sort(arg0, arg1 >>> 0);
-        },
+        __wbg_oc_bitonic_sort_safe_a030499b76d0d934: function() { return handleError(function (arg0, arg1) {
+            oc_bitonic_sort_safe(arg0, arg1 >>> 0);
+        }, arguments); },
         __wbg_oc_enc_safe_a5eb1f54dc7f6d6d: function() { return handleError(function (arg0) {
             const ret = oc_enc_safe(arg0);
             return ret;
@@ -1657,6 +1658,7 @@ function __wbg_get_imports() {
         "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js": import23,
         "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js": import24,
         "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js": import25,
+        "./snippets/automerge-wasm-a5acc53b12cef014/inline0.js": import26,
     };
 }
 

@@ -239,6 +239,46 @@ impl ObliviousTextCrdt {
         })
     }
 
+    fn collect_live_handles(&self) -> Vec<&JsValue> {
+        let cap = 4
+            + self.elements.len() * 5
+            + self.position_map.len() * 2
+            + self.change_log.len() * 8;
+        let mut live = Vec::with_capacity(cap);
+        live.push(&self.head_id);
+        live.push(&self.zero);
+        live.push(&self.one);
+        live.push(&self.oblivious_visible_count);
+        for elem in &self.elements {
+            live.push(&elem.elem_id);
+            live.push(&elem.predecessor_id);
+            live.push(&elem.value);
+            live.push(&elem.tombstone);
+            live.push(&elem.sort_key);
+        }
+        for (pos, eid) in &self.position_map {
+            live.push(pos);
+            live.push(eid);
+        }
+        for change in &self.change_log {
+            live.push(&change.op.elem_id);
+            live.push(&change.op.predecessor_id);
+            live.push(&change.op.sort_key);
+            live.push(&change.op.value);
+            live.push(&change.op.valid);
+            live.push(&change.op.target_elem_id);
+            live.push(&change.op.target_valid);
+            live.push(&change.op.target_value);
+        }
+        live
+    }
+
+    fn gc(&self, extra: &[&JsValue]) {
+        let mut live = self.collect_live_handles();
+        live.extend_from_slice(extra);
+        oblivious_dom::gc(&live);
+    }
+
     /// Fixed 32 bytes: 8 bytes lamport (BE) + up to 24 bytes actor (zero-padded).
     fn make_elem_id(&self, lamport: u64, actor: &str) -> Result<JsValue, JsValue> {
         let mut bytes = [0u8; 32];
@@ -347,6 +387,7 @@ impl ObliviousTextCrdt {
         }
 
         self.materialize()?;
+        self.gc(&[]);
         Ok(())
     }
 
@@ -1070,12 +1111,9 @@ impl ObliviousTextCrdt {
 
     // ── Oblivious edit (all keystroke logic) ─────────────────────────
 
-    const ACTION_NOOP: u8 = 0;
     const ACTION_INSERT: u8 = 1;
     const ACTION_BACKSPACE: u8 = 2;
     const ACTION_DELETE: u8 = 3;
-    const ACTION_ARROW_LEFT: u8 = 4;
-    const ACTION_ARROW_RIGHT: u8 = 5;
 
     /// `char_code`: the character's Unicode code point (from SecureKeyboardEvent.charCode)
     /// `action_type`: the action classification (from SecureKeyboardEvent.actionType, Obliv8)
@@ -1085,21 +1123,12 @@ impl ObliviousTextCrdt {
         action_type: &JsValue,
         cursor: &JsValue,
     ) -> Result<EditResult, JsValue> {
-        // 1. Classify action using Obliv8 byte comparisons
         let at_bs = oblivious_dom::from_byte(Self::ACTION_BACKSPACE)?;
         let at_del = oblivious_dom::from_byte(Self::ACTION_DELETE)?;
-        let at_left = oblivious_dom::from_byte(Self::ACTION_ARROW_LEFT)?;
-        let at_right = oblivious_dom::from_byte(Self::ACTION_ARROW_RIGHT)?;
 
         let is_bs = oblivious_dom::eq_byte(action_type, &at_bs)?;
         let is_del = oblivious_dom::eq_byte(action_type, &at_del)?;
-        let is_left = oblivious_dom::eq_byte(action_type, &at_left)?;
-        let is_right = oblivious_dom::eq_byte(action_type, &at_right)?;
-        let is_arrow = oblivious_dom::or_bool(&is_left, &is_right)?;
-        let is_control = oblivious_dom::or_bool(
-            &oblivious_dom::or_bool(&is_bs, &is_del)?,
-            &is_arrow,
-        )?;
+        let is_control = oblivious_dom::or_bool(&is_bs, &is_del)?;
         let is_printable = oblivious_dom::not_bool(&is_control)?;
 
         // Pack charCode (case-correct Unicode code point) as the element value
@@ -1161,26 +1190,14 @@ impl ObliviousTextCrdt {
             oblivious_dom::to_base64(&combined)?
         };
 
-        // 5. Cursor movement (use oblivious visible count for bounds)
         let dec = oblivious_dom::sub_int(cursor, &self.one)?;
         let inc = oblivious_dom::add_int(cursor, &self.one)?;
-        let can_dec2 = oblivious_dom::gt_int(cursor, &self.zero)?;
-        let can_inc = oblivious_dom::gt_int(&self.oblivious_visible_count, cursor)?;
+        let can_dec = oblivious_dom::gt_int(cursor, &self.zero)?;
 
         let mut new_cursor = cursor.clone();
         new_cursor = oblivious_dom::cmov_array(
             &is_bs,
-            &oblivious_dom::cmov_array(&can_dec2, &dec, cursor)?,
-            &new_cursor,
-        )?;
-        new_cursor = oblivious_dom::cmov_array(
-            &is_left,
-            &oblivious_dom::cmov_array(&can_dec2, &dec, cursor)?,
-            &new_cursor,
-        )?;
-        new_cursor = oblivious_dom::cmov_array(
-            &is_right,
-            &oblivious_dom::cmov_array(&can_inc, &inc, cursor)?,
+            &oblivious_dom::cmov_array(&can_dec, &dec, cursor)?,
             &new_cursor,
         )?;
         new_cursor = oblivious_dom::cmov_array(&is_printable, &inc, &new_cursor)?;
@@ -1236,11 +1253,17 @@ impl ObliviousTextCrdt {
         self.change_hashes.insert(hash);
         self.current_heads = vec![hash];
 
-        Ok(EditResult {
+        let result = EditResult {
             new_cursor,
             op,
             content_base64,
-        })
+        };
+        self.gc(&[&result.new_cursor,
+                   &result.op.elem_id, &result.op.predecessor_id,
+                   &result.op.sort_key, &result.op.value, &result.op.valid,
+                   &result.op.target_elem_id, &result.op.target_valid,
+                   &result.op.target_value]);
+        Ok(result)
     }
 
     // ── Sync helpers ─────────────────────────────────────────────────

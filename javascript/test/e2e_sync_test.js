@@ -207,6 +207,8 @@ async function typeInEditor(driver, iframeId, text) {
         const insertAction = oc.fromByte(1);
         const result = crdt.obliviousEdit(cc, insertAction, window._cursor);
         window._cursor = result.newCursor;
+        window._cursorPos = (window._cursorPos || 0) + 1;
+        window._visibleCount = (window._visibleCount || 0) + 1;
         window._sendSync(result.ops);
       } catch (e) {
         throw new Error(e.message || JSON.stringify(e));
@@ -228,6 +230,10 @@ async function pressBackspace(driver, iframeId, times = 1) {
       const bsAction = oc.fromByte(2);
       const result = crdt.obliviousEdit(cc, bsAction, window._cursor);
       window._cursor = result.newCursor;
+      if ((window._cursorPos || 0) > 0) {
+        window._cursorPos--;
+        window._visibleCount = (window._visibleCount || 0) - 1;
+      }
       window._sendSync(result.ops);
     `);
   }
@@ -241,11 +247,10 @@ async function pressArrowLeft(driver, iframeId, times = 1) {
   for (let i = 0; i < times; i++) {
     await driver.executeScript(`
       const oc = window._oc;
-      const crdt = window._crdt;
-      const cc = oc.createInt(0);
-      const leftAction = oc.fromByte(4);
-      const result = crdt.obliviousEdit(cc, leftAction, window._cursor);
-      window._cursor = result.newCursor;
+      if (window._cursorPos > 0) {
+        window._cursorPos--;
+        window._cursor = oc.createInt(window._cursorPos);
+      }
     `);
   }
   await driver.switchTo().defaultContent();
@@ -424,7 +429,7 @@ async function run() {
     await driver.switchTo().defaultContent();
     const aFrameT0 = await driver.findElement({ id: 'editorA' });
     await driver.switchTo().frame(aFrameT0);
-    await driver.executeScript('window._cursor = window._oc.createInt(5)');
+    await driver.executeScript('window._cursor = window._oc.createInt(5); window._cursorPos = 5');
     await driver.switchTo().defaultContent();
 
     await pressBackspace(driver, 'editorA', 1);
@@ -495,7 +500,7 @@ async function run() {
     await driver.switchTo().defaultContent();
     const bFrame = await driver.findElement({ id: 'editorB' });
     await driver.switchTo().frame(bFrame);
-    await driver.executeScript('window._cursor = window._oc.createInt(8)');
+    await driver.executeScript('window._cursor = window._oc.createInt(8); window._cursorPos = 8');
     await driver.switchTo().defaultContent();
     await pressBackspace(driver, 'editorB', 2);
     await sleep(500);
@@ -540,7 +545,7 @@ async function run() {
     await driver.switchTo().defaultContent();
     const aFrameT3 = await driver.findElement({ id: 'editorA' });
     await driver.switchTo().frame(aFrameT3);
-    await driver.executeScript('window._cursor = window._oc.createInt(6)');
+    await driver.executeScript('window._cursor = window._oc.createInt(6); window._cursorPos = 6');
     await driver.switchTo().defaultContent();
 
     // Press backspace once in A — should delete "a", leaving "Hello"
@@ -641,16 +646,16 @@ async function run() {
     await driver.switchTo().defaultContent();
     const aFrame3 = await driver.findElement({ id: 'editorA' });
     await driver.switchTo().frame(aFrame3);
-    await driver.executeScript('window._cursor = window._oc.createInt(6)');
+    await driver.executeScript('window._cursor = window._oc.createInt(6); window._cursorPos = 6');
     await driver.switchTo().defaultContent();
 
-    // Press left arrow 3 times — each adds a tombstoned element
+    // Press left arrow 3 times — now handled as cursor-only, no CRDT elements
     await pressArrowLeft(driver, 'editorA', 3);
     await sleep(300);
 
     const afterArrow = await getRevealedValues(driver, 'editorA');
     const afterArrowCount = await getElementCount(driver, 'editorA');
-    console.log(`  After 3 arrow lefts: ${afterArrowCount} elements`);
+    console.log(`  After 3 arrow lefts: ${afterArrowCount} elements (should be unchanged)`);
     console.log(`  Full render buffer (${afterArrow.length} entries): ${JSON.stringify(afterArrow)}`);
 
     // Check: only the first 6 should be "Helloa", the rest should be junk
@@ -893,7 +898,7 @@ async function run() {
     const visCount = await driver.executeScript(
       'return Array.from(window._crdt.getRenderBuffer()).filter(e => e.debugReveal() !== null).length'
     );
-    await driver.executeScript(`window._cursor = window._oc.createInt(${visCount})`);
+    await driver.executeScript(`window._cursor = window._oc.createInt(${visCount}); window._cursorPos = ${visCount}`);
     await driver.switchTo().defaultContent();
 
     const scanResults = [];
@@ -970,7 +975,7 @@ async function run() {
     const visCountT7 = await driver.executeScript(
       'return Array.from(window._crdt.getRenderBuffer()).filter(e => e.debugReveal() !== null).length'
     );
-    await driver.executeScript(`window._cursor = window._oc.createInt(${visCountT7})`);
+    await driver.executeScript(`window._cursor = window._oc.createInt(${visCountT7}); window._cursorPos = ${visCountT7}`);
     await driver.switchTo().defaultContent();
 
     // Type '1' (problematic char) in Editor A

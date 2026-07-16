@@ -40,3 +40,6 @@ export function oc_ba_length(i) { C('ba_length',[i]); return G(i).length; }
 export function oc_bitonic_sort(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
 export function oc_from_byte(v) { return S(_oc.fromByte(v)); }
 export function oc_eq_byte(a, b) { C('eq_byte',[a,b]); return S(_oc.eq(G(a), G(b))); }
+export function oc_bitonic_sort_safe(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
+export function oc_gc(keepArray) { const keep = new Set(); for (let i = 0; i < keepArray.length; i++) keep.add(keepArray[i]); const toDelete = []; for (const id of _m.keys()) { if (!keep.has(id)) toDelete.push(id); } for (const id of toDelete) _m.delete(id); }
+export function oc_handle_count() { return _m.size; }

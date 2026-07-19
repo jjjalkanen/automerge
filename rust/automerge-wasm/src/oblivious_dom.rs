@@ -7,50 +7,44 @@
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(inline_js = "
-const _m = new Map();
-let _n = 1;
-function S(o) { const i = _n++; _m.set(i, o); return i; }
 let _lastErr = '';
-function C(name, args) { for (let k = 0; k < args.length; k++) { if (typeof args[k] !== 'number') { _lastErr = name + ' arg' + k + ' is ' + typeof args[k] + ' (' + (args[k] && args[k].constructor && args[k].constructor.name) + ')'; throw new Error(_lastErr); } } }
-function G(i) { const o = _m.get(i); if (o === undefined) { _lastErr = 'G(' + typeof i + ') mapSize=' + _m.size + ' stack=' + new Error().stack; throw new Error('handle not found'); } return o; }
-export function oc_last_err() { return _lastErr; }
-function D(i) { _m.delete(i); }
 let _oc = null;
-
+export function oc_last_err() { return _lastErr; }
 export function oc_set(r) { _oc = r; }
-export function oc_drop(i) { C('drop',[i]); D(i); }
-export function oc_clone(i) { C('clone',[i]); return S(G(i)); }
-export function oc_create_int(n) { return S(_oc.createInt(n)); }
-export function oc_add_int(a, b) { C('add_int',[a,b]); return S(_oc.addInt(G(a), G(b))); }
-export function oc_sub_int(a, b) { C('sub_int',[a,b]); return S(_oc.subInt(G(a), G(b))); }
-export function oc_eq_int(a, b) { C('eq_int',[a,b]); return S(_oc.eqInt(G(a), G(b))); }
-export function oc_gt_int(a, b) { C('gt_int',[a,b]); return S(_oc.gtInt(G(a), G(b))); }
-export function oc_lt_int(a, b) { C('lt_int',[a,b]); return S(_oc.ltInt(G(a), G(b))); }
-export function oc_create_string(s) { return S(_oc.createString(s)); }
-export function oc_create_ba(data) { return S(_oc.createByteArrayFrom(data)); }
-export function oc_eq_array(a, b) { C('eq_array',[a,b]); return S(_oc.eqArray(G(a), G(b))); }
-export function oc_lt_array(a, b) { C('lt_array',[a,b]); return S(_oc.ltArray(G(a), G(b))); }
-export function oc_concat(a, b) { C('concat',[a,b]); return S(_oc.concatArrays(G(a), G(b))); }
-export function oc_slice(s, a, b) { C('slice',[s]); return S(_oc.sliceArray(G(s), a, b)); }
-export function oc_pack(ids) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'pack arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); return S(_oc.pack(ids.map(i => G(i)))); }
-export function oc_and(a, b) { C('and',[a,b]); return S(_oc.andBool(G(a), G(b))); }
-export function oc_or(a, b) { C('or',[a,b]); return S(_oc.orBool(G(a), G(b))); }
-export function oc_not(a) { C('not',[a]); return S(_oc.notBool(G(a))); }
-export function oc_cmov(c, t, f) { C('cmov',[c,t,f]); return S(_oc.cmovArray(G(c), G(t), G(f))); }
-export function oc_cmov_bool(c, t, f) { C('cmov_bool',[c,t,f]); return S(_oc.cmovBool(G(c), G(t), G(f))); }
-export function oc_b64(i) { C('b64',[i]); return G(i).toBase64(); }
-export function oc_enc(buf) { return S(_oc.fromEncrypted(buf)); }
-export function oc_enc_safe(buf) { try { return S(_oc.fromEncrypted(buf)); } catch(e) { _lastErr = 'fromEncrypted: ' + (e.message||e) + ' bufType=' + (buf && buf.constructor && buf.constructor.name) + ' bufLen=' + (buf && buf.byteLength); throw e; } }
-export function oc_unwrap(i) { C('unwrap',[i]); return G(i); }
-export function oc_wrap(o) { return S(o); }
-export function oc_debug_str(i) { C('debug_str',[i]); return G(i).toBase64(); }
-export function oc_ba_length(i) { C('ba_length',[i]); return G(i).length; }
-export function oc_bitonic_sort(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
-export function oc_from_byte(v) { return S(_oc.fromByte(v)); }
-export function oc_eq_byte(a, b) { C('eq_byte',[a,b]); return S(_oc.eq(G(a), G(b))); }
-export function oc_bitonic_sort_safe(ids, keySize) { ids.forEach((v,k) => { if (typeof v !== 'number') { _lastErr = 'bitonic_sort arg[' + k + '] is ' + typeof v; throw new Error(_lastErr); } }); _oc.bitonicSort(ids.map(i => G(i)), keySize); }
-export function oc_gc(keepArray) { const keep = new Set(); for (let i = 0; i < keepArray.length; i++) keep.add(keepArray[i]); const toDelete = []; for (const id of _m.keys()) { if (!keep.has(id)) toDelete.push(id); } for (const id of toDelete) _m.delete(id); }
-export function oc_handle_count() { return _m.size; }
+export function oc_drop(i) {}
+export function oc_clone(i) { return _oc.h_clone(i); }
+export function oc_create_int(n) { return _oc.h_createInt(n); }
+export function oc_add_int(a, b) { return _oc.h_addInt(a, b); }
+export function oc_sub_int(a, b) { return _oc.h_subInt(a, b); }
+export function oc_eq_int(a, b) { return _oc.h_eqInt(a, b); }
+export function oc_gt_int(a, b) { return _oc.h_gtInt(a, b); }
+export function oc_lt_int(a, b) { return _oc.h_ltArray(a, b); }
+export function oc_create_string(s) { const e = new TextEncoder(); const b = e.encode(s); const d = new Uint8Array(1 + b.length * 2); d[0] = 1; for (let i = 0; i < b.length; i++) { d[1 + i*2] = b[i] & 0xff; d[2 + i*2] = (b[i] >> 8) & 0xff; } return _oc.h_createByteArrayFrom(d); }
+export function oc_create_ba(data) { return _oc.h_createByteArrayFrom(data); }
+export function oc_eq_array(a, b) { return _oc.h_eqArray(a, b); }
+export function oc_lt_array(a, b) { return _oc.h_ltArray(a, b); }
+export function oc_concat(a, b) { return _oc.h_concatArrays(a, b); }
+export function oc_slice(s, a, b) { return _oc.h_sliceArray(s, a, b); }
+export function oc_pack(ids) { return _oc.h_pack(new Uint32Array(ids)); }
+export function oc_and(a, b) { return _oc.h_andBool(a, b); }
+export function oc_or(a, b) { return _oc.h_orBool(a, b); }
+export function oc_not(a) { return _oc.h_notBool(a); }
+export function oc_cmov(c, t, f) { return _oc.h_cmovArray(c, t, f); }
+export function oc_cmov_bool(c, t, f) { return _oc.h_cmovBool(c, t, f); }
+export function oc_b64(i) { return _oc.h_toBase64(i); }
+export function oc_enc(buf) { return _oc.h_fromEncrypted(buf); }
+export function oc_enc_safe(buf) { try { return _oc.h_fromEncrypted(buf); } catch(e) { _lastErr = 'fromEncrypted: ' + (e.message||e); throw e; } }
+export function oc_unwrap(i) { return _oc.h_exportByteArray(i); }
+export function oc_wrap(o) { if (typeof o === 'number') return o; try { return _oc.h_importByteArray(o); } catch(e1) { try { return _oc.h_importBool(o); } catch(e2) { return _oc.h_importObliv8(o); } } }
+export function oc_debug_str(i) { return _oc.h_toBase64(i); }
+export function oc_ba_length(i) { return _oc.h_baLength(i); }
+export function oc_bitonic_sort(ids, keySize) { _oc.h_bitonicSort(new Uint32Array(ids), keySize); }
+export function oc_from_byte(v) { return _oc.h_fromByte(v); }
+export function oc_eq_byte(a, b) { return _oc.h_eqByte(a, b); }
+export function oc_bitonic_sort_safe(ids, keySize) { _oc.h_bitonicSort(new Uint32Array(ids), keySize); }
+export function oc_gc(keepArray, watermark) { _oc.h_freeAboveWatermark(new Uint32Array(keepArray), watermark); }
+export function oc_handle_count() { return _oc.h_handleCount(); }
+export function oc_watermark() { return _oc.h_watermark(); }
 ")]
 extern "C" {
     fn oc_set(r: &JsValue);
@@ -87,8 +81,9 @@ extern "C" {
     fn oc_bitonic_sort_safe(ids: &JsValue, key_size: u32) -> Result<(), JsValue>;
     fn oc_from_byte(v: JsValue) -> JsValue;
     fn oc_eq_byte(a: JsValue, b: JsValue) -> JsValue;
-    fn oc_gc(keep: &JsValue);
+    fn oc_gc(keep: &JsValue, watermark: u32);
     fn oc_handle_count() -> JsValue;
+    fn oc_watermark() -> JsValue;
     fn oc_last_err() -> JsValue;
 }
 
@@ -215,12 +210,16 @@ pub fn bitonic_sort_native(entries: &JsValue, key_size: u32) -> Result<(), JsVal
     oc_bitonic_sort_safe(entries, key_size)
 }
 
-pub fn gc(live_handles: &[&JsValue]) {
+pub fn gc(live_handles: &[&JsValue], watermark: u32) {
     let arr = js_sys::Array::new_with_length(live_handles.len() as u32);
     for (i, v) in live_handles.iter().enumerate() {
         arr.set(i as u32, hv(v));
     }
-    oc_gc(&arr.into());
+    oc_gc(&arr.into(), watermark);
+}
+
+pub fn watermark() -> u32 {
+    oc_watermark().as_f64().unwrap_or(0.0) as u32
 }
 
 pub fn handle_count() -> u32 {

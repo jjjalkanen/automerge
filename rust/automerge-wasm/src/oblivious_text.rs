@@ -47,9 +47,9 @@ struct StoredChange {
     op: StoredOp,
 }
 
-fn make_change_hash(seq: u64, actor: &str) -> ChangeHash {
+fn make_change_hash(lamport: u64, actor: &str) -> ChangeHash {
     let mut bytes = [0u8; 32];
-    let id_str = format!("{}:{}", seq, actor);
+    let id_str = format!("{}:{}", lamport, actor);
     let id_bytes = id_str.as_bytes();
     let n = id_bytes.len().min(32);
     bytes[..n].copy_from_slice(&id_bytes[..n]);
@@ -212,6 +212,8 @@ pub struct ObliviousTextCrdt {
     pub current_heads: Vec<ChangeHash>,
     /// Monotonic change sequence counter.
     pub change_seq: u64,
+    /// Cached render buffer from the last edit/materialize (None = needs rebuild).
+    pub cached_render_buffer: Option<Vec<JsValue>>,
 }
 
 impl ObliviousTextCrdt {
@@ -236,14 +238,17 @@ impl ObliviousTextCrdt {
             change_hashes: HashSet::new(),
             current_heads: Vec::new(),
             change_seq: 0,
+            cached_render_buffer: None,
         })
     }
 
     fn collect_live_handles(&self) -> Vec<&JsValue> {
+        let buf_len = self.cached_render_buffer.as_ref().map_or(0, |b| b.len());
         let cap = 4
             + self.elements.len() * 5
             + self.position_map.len() * 2
-            + self.change_log.len() * 8;
+            + self.change_log.len() * 8
+            + buf_len;
         let mut live = Vec::with_capacity(cap);
         live.push(&self.head_id);
         live.push(&self.zero);
@@ -270,13 +275,25 @@ impl ObliviousTextCrdt {
             live.push(&change.op.target_valid);
             live.push(&change.op.target_value);
         }
+        if let Some(ref buf) = self.cached_render_buffer {
+            for val in buf {
+                live.push(val);
+            }
+        }
         live
     }
 
-    fn gc(&self, extra: &[&JsValue]) {
+    fn gc(&self, extra: &[&JsValue], watermark: u32) {
         let mut live = self.collect_live_handles();
         live.extend_from_slice(extra);
-        oblivious_dom::gc(&live);
+        oblivious_dom::gc(&live, watermark);
+    }
+
+    pub fn collect_live_handle_ids(&self) -> Vec<u32> {
+        self.collect_live_handles()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as u32))
+            .collect()
     }
 
     /// Fixed 32 bytes: 8 bytes lamport (BE) + up to 24 bytes actor (zero-padded).
@@ -289,9 +306,11 @@ impl ObliviousTextCrdt {
         oblivious_dom::create_byte_array(&bytes)
     }
 
+    /// Descending lamport so the newest sibling sorts first (last-write-wins).
     fn make_sort_key(&self, lamport: u64, actor: &str) -> Result<JsValue, JsValue> {
         let mut bytes = [0u8; 32];
-        bytes[..8].copy_from_slice(&lamport.to_be_bytes());
+        let inv_lamport = u64::MAX - lamport;
+        bytes[..8].copy_from_slice(&inv_lamport.to_be_bytes());
         let actor_bytes = actor.as_bytes();
         let n = actor_bytes.len().min(24);
         bytes[8..8 + n].copy_from_slice(&actor_bytes[..n]);
@@ -387,7 +406,8 @@ impl ObliviousTextCrdt {
         }
 
         self.materialize()?;
-        self.gc(&[]);
+        let buf = self.get_render_buffer()?;
+        self.cached_render_buffer = Some(buf);
         Ok(())
     }
 
@@ -1109,6 +1129,148 @@ impl ObliviousTextCrdt {
         Ok(buffer)
     }
 
+    // ── Fast-path incremental updates (O(N) per edit) ──────────────
+
+    fn incremental_update_position_map(
+        &mut self,
+        insert_pos: &JsValue,
+        delete_cursor: &JsValue,
+        is_printable: &JsValue,
+        should_delete: &JsValue,
+        new_elem_id: &JsValue,
+        delete_target_id: &JsValue,
+    ) -> Result<(), JsValue> {
+        let fill = Self::make_fill(INT_SIZE as usize)?;
+
+        for (pos, elem_id) in &mut self.position_map {
+            let is_fill = oblivious_dom::eq_array(pos, &fill)?;
+            let is_not_fill = oblivious_dom::not_bool(&is_fill)?;
+
+            // Shift up for insert (skip fill entries)
+            let pos_ge_ins = oblivious_dom::not_bool(
+                &oblivious_dom::gt_int(insert_pos, pos)?,
+            )?;
+            let shift_up = oblivious_dom::and_bool(is_printable, &pos_ge_ins)?;
+            let shift_up = oblivious_dom::and_bool(&shift_up, &is_not_fill)?;
+            let shifted_up = oblivious_dom::add_int(pos, &self.one)?;
+            *pos = oblivious_dom::cmov_array(&shift_up, &shifted_up, pos)?;
+
+            // Shift down for delete (skip fill entries)
+            let pos_gt_del = oblivious_dom::gt_int(pos, delete_cursor)?;
+            let shift_down = oblivious_dom::and_bool(should_delete, &pos_gt_del)?;
+            let shift_down = oblivious_dom::and_bool(&shift_down, &is_not_fill)?;
+            let shifted_down = oblivious_dom::sub_int(pos, &self.one)?;
+            *pos = oblivious_dom::cmov_array(&shift_down, &shifted_down, pos)?;
+
+            // Remove deleted element (set position to fill)
+            let is_target = oblivious_dom::eq_array(elem_id, delete_target_id)?;
+            let should_remove = oblivious_dom::and_bool(&is_target, should_delete)?;
+            *pos = oblivious_dom::cmov_array(&should_remove, &fill, pos)?;
+        }
+
+        // Down-edge: visible position if printable, else fill
+        let down_pos = oblivious_dom::cmov_array(is_printable, insert_pos, &fill)?;
+        self.position_map.push((down_pos, new_elem_id.clone()));
+        // Up-edge: always fill
+        self.position_map.push((fill.clone(), new_elem_id.clone()));
+
+        // Update visible count
+        let vis_plus = oblivious_dom::add_int(&self.oblivious_visible_count, &self.one)?;
+        let vis_minus = oblivious_dom::sub_int(&self.oblivious_visible_count, &self.one)?;
+        self.oblivious_visible_count = oblivious_dom::cmov_array(
+            is_printable, &vis_plus, &self.oblivious_visible_count,
+        )?;
+        self.oblivious_visible_count = oblivious_dom::cmov_array(
+            should_delete, &vis_minus, &self.oblivious_visible_count,
+        )?;
+
+        Ok(())
+    }
+
+    fn update_render_buffer(
+        &self,
+        buffer: &mut Vec<JsValue>,
+        cursor: &JsValue,
+        action_type: &JsValue,
+        key_value: &JsValue,
+        invalid_value: &JsValue,
+    ) -> Result<(), JsValue> {
+        let at_bs = oblivious_dom::from_byte(Self::ACTION_BACKSPACE)?;
+        let at_del = oblivious_dom::from_byte(Self::ACTION_DELETE)?;
+        let is_bs = oblivious_dom::eq_byte(action_type, &at_bs)?;
+        let is_del = oblivious_dom::eq_byte(action_type, &at_del)?;
+        let is_control = oblivious_dom::or_bool(&is_bs, &is_del)?;
+        let is_insert = oblivious_dom::not_bool(&is_control)?;
+        let shift_left = is_control;
+        let shift_right = is_insert.clone();
+
+        // Target index in the buffer
+        let cursor_plus = oblivious_dom::add_int(cursor, &self.one)?;
+        let too_high = oblivious_dom::gt_int(
+            &cursor_plus, &self.oblivious_visible_count,
+        )?;
+        let insert_target = oblivious_dom::cmov_array(
+            &too_high, &self.oblivious_visible_count, &cursor_plus,
+        )?;
+        let can_dec = oblivious_dom::gt_int(cursor, &self.zero)?;
+        let bs_target = oblivious_dom::cmov_array(
+            &can_dec,
+            &oblivious_dom::sub_int(cursor, &self.one)?,
+            cursor,
+        )?;
+        let target_idx = oblivious_dom::cmov_array(
+            &is_insert,
+            &insert_target,
+            &oblivious_dom::cmov_array(&is_bs, &bs_target, cursor)?,
+        )?;
+
+        let old_len = buffer.len();
+        buffer.push(invalid_value.clone());
+
+        let mut prev_val = invalid_value.clone();
+        let mut is_found = oblivious_dom::create_false()?;
+
+        for i in 0..=old_len {
+            let temp_elem = buffer[i].clone();
+            let next_val = if i < old_len {
+                buffer[i + 1].clone()
+            } else {
+                invalid_value.clone()
+            };
+
+            let i_val = oblivious_dom::create_int(i as i32)?;
+            let is_at_index = oblivious_dom::eq_int(&i_val, &target_idx)?;
+
+            // At target: insert places key_value, delete/bs shifts left
+            let mut val_at_target = temp_elem.clone();
+            val_at_target = oblivious_dom::cmov_array(
+                &is_insert, key_value, &val_at_target,
+            )?;
+            val_at_target = oblivious_dom::cmov_array(
+                &shift_left, &next_val, &val_at_target,
+            )?;
+
+            // After target: insert shifts right, delete/bs shifts left
+            let mut val_after = temp_elem.clone();
+            val_after = oblivious_dom::cmov_array(
+                &shift_right, &prev_val, &val_after,
+            )?;
+            val_after = oblivious_dom::cmov_array(
+                &shift_left, &next_val, &val_after,
+            )?;
+
+            let mut new_val = temp_elem.clone();
+            new_val = oblivious_dom::cmov_array(&is_found, &val_after, &new_val)?;
+            new_val = oblivious_dom::cmov_array(&is_at_index, &val_at_target, &new_val)?;
+
+            buffer[i] = new_val;
+            prev_val = temp_elem;
+            is_found = oblivious_dom::or_bool(&is_found, &is_at_index)?;
+        }
+
+        Ok(())
+    }
+
     // ── Oblivious edit (all keystroke logic) ─────────────────────────
 
     const ACTION_INSERT: u8 = 1;
@@ -1123,6 +1285,7 @@ impl ObliviousTextCrdt {
         action_type: &JsValue,
         cursor: &JsValue,
     ) -> Result<EditResult, JsValue> {
+        let watermark = oblivious_dom::watermark();
         let at_bs = oblivious_dom::from_byte(Self::ACTION_BACKSPACE)?;
         let at_del = oblivious_dom::from_byte(Self::ACTION_DELETE)?;
 
@@ -1135,9 +1298,22 @@ impl ObliviousTextCrdt {
         let key_value = oblivious_dom::pack(&[char_code])?;
         let invalid_value = oblivious_dom::create_byte_array(&[0u8; 5])?;
 
-        // 2. Always insert an INVALID element at cursor position
+        // Clamp cursor for the predecessor lookup: when appending (cursor >= visible_count)
+        // and the document is non-empty, use visible_count - 1 so the new element becomes
+        // a child of the last visible element (chain structure), not a sibling of HEAD.
+        let has_elements = oblivious_dom::gt_int(
+            &self.oblivious_visible_count, &self.zero,
+        )?;
+        let cursor_past_end = oblivious_dom::not_bool(
+            &oblivious_dom::gt_int(&self.oblivious_visible_count, cursor)?,
+        )?;
+        let should_clamp = oblivious_dom::and_bool(&has_elements, &cursor_past_end)?;
+        let last_pos = oblivious_dom::sub_int(&self.oblivious_visible_count, &self.one)?;
+        let insert_cursor = oblivious_dom::cmov_array(&should_clamp, &last_pos, cursor)?;
+
+        // 2. Always insert an INVALID element (predecessor from clamped cursor)
         let tombstone_true = oblivious_dom::create_true()?;
-        let insert_fields = self.insert_element(cursor, &invalid_value, tombstone_true)?;
+        let insert_fields = self.insert_element(&insert_cursor, &invalid_value, tombstone_true)?;
         let new_elem_id = insert_fields.elem_id.clone();
 
         // 3. cmov update pass over ALL elements
@@ -1176,10 +1352,36 @@ impl ObliviousTextCrdt {
             )?;
         }
 
-        // 4. Materialize and render
-        self.materialize()?;
+        // 4. Update position map and render buffer
+        if self.cached_render_buffer.is_none() {
+            // Slow path: first edit or after sync — full recompute
+            self.materialize()?;
+            let buf = self.get_render_buffer()?;
+            self.cached_render_buffer = Some(buf);
+        } else {
+            // Fast path: O(N) incremental update
+            // Update render buffer BEFORE position_map (which modifies visible_count)
+            let mut buf = self.cached_render_buffer.take().unwrap();
+            self.update_render_buffer(
+                &mut buf, cursor, action_type, &key_value, &invalid_value,
+            )?;
+            self.cached_render_buffer = Some(buf);
 
-        let buffer = self.get_render_buffer()?;
+            let cursor_plus = oblivious_dom::add_int(cursor, &self.one)?;
+            let too_high = oblivious_dom::gt_int(
+                &cursor_plus, &self.oblivious_visible_count,
+            )?;
+            let insert_pos = oblivious_dom::cmov_array(
+                &too_high, &self.oblivious_visible_count, &cursor_plus,
+            )?;
+            self.incremental_update_position_map(
+                &insert_pos, &delete_cursor,
+                &is_printable, &should_delete,
+                &new_elem_id, &delete_target_id,
+            )?;
+        }
+
+        let buffer = self.cached_render_buffer.as_ref().unwrap();
         let content_base64 = if buffer.is_empty() {
             String::new()
         } else {
@@ -1232,7 +1434,7 @@ impl ObliviousTextCrdt {
         let target_valid_ba = oblivious_dom::cmov_array(&op.target_valid, &true_ba, &false_ba)?;
 
         self.change_seq += 1;
-        let hash = make_change_hash(self.change_seq, &self.actor_id);
+        let hash = make_change_hash(op.lamport, &self.actor_id);
         let stored_op = StoredOp {
             lamport: op.lamport,
             actor: self.actor_id.clone(),
@@ -1262,7 +1464,7 @@ impl ObliviousTextCrdt {
                    &result.op.elem_id, &result.op.predecessor_id,
                    &result.op.sort_key, &result.op.value, &result.op.valid,
                    &result.op.target_elem_id, &result.op.target_valid,
-                   &result.op.target_value]);
+                   &result.op.target_value], watermark);
         Ok(result)
     }
 
@@ -1295,7 +1497,15 @@ impl ObliviousTextCrdt {
     }
 
     fn apply_sync_change(&mut self, data: &[u8]) -> Result<ChangeHash, JsValue> {
+        let watermark = oblivious_dom::watermark();
         let op = deserialize_op(data)?;
+
+        let hash = make_change_hash(op.lamport, &op.actor);
+        if self.change_hashes.contains(&hash) {
+            self.gc(&[], watermark);
+            return Ok(hash);
+        }
+
         self.apply_remote_op(
             op.lamport,
             &op.actor,
@@ -1310,7 +1520,6 @@ impl ObliviousTextCrdt {
         )?;
 
         self.change_seq += 1;
-        let hash = make_change_hash(self.change_seq, &op.actor);
         self.change_log.push(StoredChange {
             hash,
             deps: self.current_heads.clone(),
@@ -1318,6 +1527,7 @@ impl ObliviousTextCrdt {
         });
         self.change_hashes.insert(hash);
         self.current_heads = vec![hash];
+        self.gc(&[], watermark);
         Ok(hash)
     }
 

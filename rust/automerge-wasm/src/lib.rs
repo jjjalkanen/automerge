@@ -2452,6 +2452,14 @@ impl ObliviousText {
         self.inner.borrow().lamport_counter as u32
     }
 
+    #[wasm_bindgen(js_name = "collectLiveHandleIds")]
+    pub fn collect_live_handle_ids(&self) -> js_sys::Uint32Array {
+        let ids = self.inner.borrow().collect_live_handle_ids();
+        let arr = js_sys::Uint32Array::new_with_length(ids.len() as u32);
+        arr.copy_from(&ids);
+        arr
+    }
+
     #[wasm_bindgen(js_name = "obliviousEdit")]
     pub fn oblivious_edit(&self, char_code: &JsValue, action_type: &JsValue, cursor: &JsValue) -> Result<Object, JsValue> {
         let cc = oblivious_dom::wrap_handle(char_code);

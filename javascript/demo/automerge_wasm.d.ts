@@ -407,6 +407,7 @@ export class ObliviousText {
     free(): void;
     [Symbol.dispose](): void;
     applyRemoteOp(lamport: number, actor: string, elem_id: any, predecessor_id: any, value: any, sort_key: any, valid: any, target_elem_id: any, target_valid: any, target_value: any): void;
+    collectLiveHandleIds(): Uint32Array;
     debugCleartext(): string;
     generateSyncMessage(state: SyncState): any;
     getActorId(): string;
@@ -562,6 +563,7 @@ export interface InitOutput {
     readonly oblivioustext_materialize: (a: number) => [number, number];
     readonly oblivioustext_getActorId: (a: number) => [number, number];
     readonly oblivioustext_getLamport: (a: number) => number;
+    readonly oblivioustext_collectLiveHandleIds: (a: number) => any;
     readonly oblivioustext_obliviousEdit: (a: number, b: any, c: any, d: any) => [number, number, number];
     readonly oblivioustext_generateSyncMessage: (a: number, b: number) => any;
     readonly oblivioustext_receiveSyncMessage: (a: number, b: number, c: any) => [number, number];

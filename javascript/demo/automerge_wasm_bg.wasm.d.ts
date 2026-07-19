@@ -102,6 +102,7 @@ export const oblivioustext_getRenderBuffer: (a: number) => [number, number, numb
 export const oblivioustext_materialize: (a: number) => [number, number];
 export const oblivioustext_getActorId: (a: number) => [number, number];
 export const oblivioustext_getLamport: (a: number) => number;
+export const oblivioustext_collectLiveHandleIds: (a: number) => any;
 export const oblivioustext_obliviousEdit: (a: number, b: any, c: any, d: any) => [number, number, number];
 export const oblivioustext_generateSyncMessage: (a: number, b: number) => any;
 export const oblivioustext_receiveSyncMessage: (a: number, b: number, c: any) => [number, number];

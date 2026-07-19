@@ -4,48 +4,73 @@
   <meta charset="utf-8">
   <title>Sync Editor</title>
   <style>
-    body {
-      background: #111;
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #0a0a0a;
       color: #eee;
       font-family: monospace;
-      padding: 0.5em;
-      margin: 0;
     }
-    #status { color: #888; margin-bottom: 0.5em; font-size: 13px; }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
     #editor {
+      flex: 1;
       border: 1px solid #555;
       padding: 0.5em;
-      min-height: 2em;
       background: #1a1a1a;
       cursor: text;
       outline: none;
+      font-family: monospace;
+      min-width: 0;
+      min-height: 0;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      overflow-y: auto;
     }
     #editor:focus-within {
       border-color: #00d230;
     }
     securetext {
       display: block;
+      width: 100%;
+      height: 100%;
+      border: none;
+      outline: none;
+      cursor: text;
+      font-family: monospace;
       font-size: 18px;
       line-height: 1.5;
+      color: inherit;
+      min-width: unset;
+      min-height: unset;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
-    .error { color: #f44; }
   </style>
 </head>
 <body>
-  <div id="status">Initializing WASM…</div>
   <div id="editor" tabindex="0"></div>
 
   <script type="module">
     import init, { ObliviousText, initSyncState, setObliviousRef } from './automerge_wasm.js';
 
-    const editorId = new URLSearchParams(location.search).get('id') || '?';
+    const params = new URLSearchParams(location.search);
+    const editorId = params.get('id') || '?';
+    const wsUrl = params.get('ws') || `ws://${location.host}/ws`;
+    const seed = params.get('seed') || '';
 
-    const status = document.getElementById('status');
     const editor = document.getElementById('editor');
 
+    function setStatus(text) {
+      try { parent.postMessage({ type: 'status-update', id: editorId, text }, '*'); } catch {}
+    }
+
     if (!window.oblivious) {
-      status.textContent = 'Enable dom.oblivious.enabled and dom.encryptedtext.enabled in about:config';
-      status.classList.add('error');
+      setStatus(`Editor ${editorId} -- enable dom.oblivious.enabled in about:config`);
       throw new Error('window.oblivious not available');
     }
 
@@ -62,19 +87,23 @@
     const secureEl = document.createElement('securetext');
     editor.appendChild(secureEl);
 
-    // Expose globals for E2E test harness
     window._oc = oc;
     window._crdt = crdt;
     window._cursor = oc.createInt(0);
     window._cursorPos = 0;
     window._visibleCount = 0;
 
+    function scopedGc(watermark) {
+      const live = crdt.collectLiveHandleIds();
+      oc.h_freeAboveWatermark(live, watermark);
+    }
+
     function renderFromBuffer() {
       try {
         const buffer = crdt.getRenderBuffer();
         if (buffer.length === 0) {
           secureEl.value = '';
-          status.textContent = `Editor ${editorId} — empty — ready`;
+          setStatus(`Editor ${editorId} -- empty -- ready`);
           return;
         }
         let combined = buffer[0];
@@ -83,17 +112,76 @@
         }
         secureEl.value = combined.toBase64();
         secureEl.setObliviousCursor(window._cursor);
-        status.textContent = `Editor ${editorId} — ${buffer.length} chars — ready`;
+        setStatus(`Editor ${editorId} -- ${buffer.length} chars -- ready`);
       } catch (e) {
         console.error('[render]', e);
-        status.textContent = `Editor ${editorId} — render error: ${e.message}`;
+        setStatus(`Editor ${editorId} -- render error: ${e.message}`);
       }
     }
 
-    // Only Editor A seeds initial text; B receives it via sync
-    if (editorId === 'A') {
+    // -- WebSocket sync -----------------------------------------------
+
+    let ws = null;
+    let wsReady = false;
+
+    function connectWs() {
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        wsReady = true;
+        setStatus(`Editor ${editorId} -- connected -- ready`);
+        sendSync();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const wm = oc.h_watermark();
+          const msg = new Uint8Array(event.data);
+          crdt.receiveSyncMessage(syncState, msg);
+          renderFromBuffer();
+          scopedGc(wm);
+          postLog('receive', msg);
+          sendSync();
+        } catch (err) {
+          console.error('[sync receive]', err);
+          setStatus(`Editor ${editorId} -- sync error: ${err.message || err}`);
+        }
+      };
+
+      ws.onclose = () => {
+        wsReady = false;
+        setTimeout(connectWs, 1000);
+      };
+    }
+
+    function sendSync() {
+      if (!wsReady) return;
+      let rounds = 0;
+      while (rounds++ < 10) {
+        const msg = crdt.generateSyncMessage(syncState);
+        if (!msg) break;
+        ws.send(msg);
+        postLog('send', msg);
+      }
+    }
+
+    function postLog(direction, msg) {
+      try {
+        window.parent.postMessage({
+          type: 'sync-log',
+          from: editorId,
+          direction,
+          syncMsg: Array.from(new Uint8Array(msg)),
+        }, '*');
+      } catch {}
+    }
+
+    // -- Seed initial content -----------------------------------------
+
+    if (seed) {
       const insertAction = oc.fromByte(1);
-      for (const ch of 'Hello') {
+      for (const ch of seed) {
         const kc = oc.createInt(ch.charCodeAt(0));
         const result = crdt.obliviousEdit(kc, insertAction, window._cursor);
         window._cursor = result.newCursor;
@@ -101,22 +189,10 @@
         window._visibleCount++;
       }
       renderFromBuffer();
-      setTimeout(() => sendSync(), 100);
     }
 
-    function sendSync() {
-      const msg = crdt.generateSyncMessage(syncState);
-      if (msg) {
-        window.parent.postMessage({
-          from: editorId,
-          syncMsg: Array.from(new Uint8Array(msg)),
-        }, '*');
-      }
-    }
-    window._sendSync = sendSync;
-    window._renderFromBuffer = renderFromBuffer;
+    // -- Keystroke handling -------------------------------------------
 
-    // Keystroke handling
     function updatePlainCursor(action, cursorPos, visibleCount) {
       let newPos = cursorPos, newCount = visibleCount;
       if (action === 1) { newPos++; newCount++; }
@@ -135,11 +211,11 @@
         window._visibleCount = u.count;
         secureEl.value = result.content;
         secureEl.setObliviousCursor(window._cursor);
-        status.textContent = `Editor ${editorId} — ready`;
+        setStatus(`Editor ${editorId} -- ready`);
         sendSync();
       } catch (err) {
         console.error('[obliviousEdit]', err);
-        status.textContent = `Editor ${editorId} — error: ${err.message}`;
+        setStatus(`Editor ${editorId} -- error: ${err.message}`);
       }
     });
 
@@ -160,28 +236,15 @@
       window._cursor = secureEl.getSelectionStart();
     });
 
-    // Receive sync messages from other editor via parent relay
-    window.addEventListener('message', (event) => {
-      const { syncMsg } = event.data || {};
-      if (!syncMsg) return;
+    // -- Start --------------------------------------------------------
 
-      try {
-        const message = new Uint8Array(syncMsg);
-        crdt.receiveSyncMessage(syncState, message);
-        renderFromBuffer();
-        sendSync();
-      } catch (err) {
-        console.error('[sync receive]', err);
-        status.textContent = `Editor ${editorId} — sync error: ${err.message || err}`;
-      }
-    });
-
-    status.textContent = `Editor ${editorId} — ready`;
+    connectWs();
+    setStatus(`Editor ${editorId} -- ready`);
     editor.focus();
+
     } catch (e) {
       console.error('[init]', e);
-      status.textContent = `Editor ${editorId} — init error: ${e.message}`;
-      status.classList.add('error');
+      setStatus(`Editor ${editorId} -- init error: ${e.message}`);
     }
   </script>
 </body>

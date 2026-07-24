@@ -239,6 +239,7 @@
     // -- Start --------------------------------------------------------
 
     connectWs();
+    window._sendSync = sendSync;
     setStatus(`Editor ${editorId} -- ready`);
     editor.focus();
 

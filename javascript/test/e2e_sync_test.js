@@ -271,9 +271,165 @@ async function run() {
       `Editor A has "Helloa" after 2 backspaces (got "${bsResult.join('')}")`);
 
     // -------------------------------------------------------------------
-    // Test 4: Performance -- per-keystroke latency and handle counts
+    // Test 4: Cursor movement and mid-text insertion
     // -------------------------------------------------------------------
-    console.log('\nTest 4: Performance (30 keystrokes)');
+    console.log('\nTest 4: Cursor movement and mid-text insertion');
+
+    const cursorResult = await execInFrame(driver, 0, `
+      const oc = window._oc;
+      const crdt = window._crdt;
+      const insertAction = oc.fromByte(1);
+
+      // State: "Helloa" (6 chars). cursor=2 inserts after pos 2 ('l').
+      let cursor = oc.createInt(2);
+      let kc = oc.createInt('X'.charCodeAt(0));
+      let result = crdt.obliviousEdit(kc, insertAction, cursor);
+      cursor = result.newCursor;
+
+      const after1 = crdt.getRenderBuffer()
+        .map(v => v.debugReveal()).filter(v => v !== null);
+
+      // cursor=0 inserts after pos 0 ('H').
+      cursor = oc.createInt(0);
+      kc = oc.createInt('Y'.charCodeAt(0));
+      result = crdt.obliviousEdit(kc, insertAction, cursor);
+
+      const after2 = crdt.getRenderBuffer()
+        .map(v => v.debugReveal()).filter(v => v !== null);
+
+      return { after1: after1.join(''), after2: after2.join('') };
+    `);
+
+    assert(cursorResult.after1 === 'HelXloa',
+      `Mid-text insert after pos 2: "HelXloa" (got "${cursorResult.after1}")`);
+    assert(cursorResult.after2 === 'HYelXloa',
+      `Insert after pos 0: "HYelXloa" (got "${cursorResult.after2}")`);
+
+    // -------------------------------------------------------------------
+    // Test 5: Sync A->B after edits
+    // -------------------------------------------------------------------
+    console.log('\nTest 5: Sync A->B correctness');
+
+    // Trigger sync from A so B receives the edits from tests 2-4
+    await execInFrame(driver, 0, `window._sendSync()`);
+    await sleep(2000);
+
+    // Poll B until it converges with A
+    const contentA = await execInFrame(driver, 0, `
+      return window._crdt.getRenderBuffer()
+        .map(v => v.debugReveal()).filter(v => v !== null).join('');
+    `);
+
+    let contentB;
+    const syncABDeadline = Date.now() + 15000;
+    while (Date.now() < syncABDeadline) {
+      contentB = await execInFrame(driver, 1, `
+        return window._crdt.getRenderBuffer()
+          .map(v => v.debugReveal()).filter(v => v !== null).join('');
+      `);
+      if (contentB === contentA) break;
+      await sleep(500);
+    }
+
+    assert(contentB === contentA,
+      `B synced A's content "${contentA}" (got "${contentB}")`);
+
+    // -------------------------------------------------------------------
+    // Test 6: Sync B->A
+    // -------------------------------------------------------------------
+    console.log('\nTest 6: Sync B->A correctness');
+
+    // Type "!" at end of B
+    await execInFrame(driver, 1, `
+      const oc = window._oc;
+      const crdt = window._crdt;
+      const insertAction = oc.fromByte(1);
+      const visCount = crdt.getRenderBuffer()
+        .filter(e => e.debugReveal() !== null).length;
+      const cursor = oc.createInt(visCount);
+      const kc = oc.createInt('!'.charCodeAt(0));
+      crdt.obliviousEdit(kc, insertAction, cursor);
+      window._sendSync();
+    `);
+    await sleep(2000);
+
+    const expectedBA = await execInFrame(driver, 1, `
+      return window._crdt.getRenderBuffer()
+        .map(v => v.debugReveal()).filter(v => v !== null).join('');
+    `);
+
+    let contentA2;
+    const syncBADeadline = Date.now() + 15000;
+    while (Date.now() < syncBADeadline) {
+      contentA2 = await execInFrame(driver, 0, `
+        return window._crdt.getRenderBuffer()
+          .map(v => v.debugReveal()).filter(v => v !== null).join('');
+      `);
+      if (contentA2 === expectedBA) break;
+      await sleep(500);
+    }
+
+    assert(contentA2 === expectedBA,
+      `A synced B's edit "${expectedBA}" (got "${contentA2}")`);
+
+    // -------------------------------------------------------------------
+    // Test 7: Concurrent edits converge
+    // -------------------------------------------------------------------
+    console.log('\nTest 7: Concurrent edits converge');
+
+    // Type in both editors without waiting for sync between them
+    await execInFrame(driver, 0, `
+      const oc = window._oc;
+      const crdt = window._crdt;
+      const insertAction = oc.fromByte(1);
+      const cursor = oc.createInt(0);
+      const kc = oc.createInt('['.charCodeAt(0));
+      crdt.obliviousEdit(kc, insertAction, cursor);
+    `);
+    await execInFrame(driver, 1, `
+      const oc = window._oc;
+      const crdt = window._crdt;
+      const insertAction = oc.fromByte(1);
+      const visCount = crdt.getRenderBuffer()
+        .filter(e => e.debugReveal() !== null).length;
+      const cursor = oc.createInt(visCount);
+      const kc = oc.createInt(']'.charCodeAt(0));
+      crdt.obliviousEdit(kc, insertAction, cursor);
+    `);
+
+    // Now trigger sync from both sides
+    await execInFrame(driver, 0, `window._sendSync()`);
+    await execInFrame(driver, 1, `window._sendSync()`);
+    await sleep(3000);
+
+    // Poll until both converge
+    const convDeadline = Date.now() + 15000;
+    let convA, convB;
+    while (Date.now() < convDeadline) {
+      convA = await execInFrame(driver, 0, `
+        return window._crdt.getRenderBuffer()
+          .map(v => v.debugReveal()).filter(v => v !== null).join('');
+      `);
+      convB = await execInFrame(driver, 1, `
+        return window._crdt.getRenderBuffer()
+          .map(v => v.debugReveal()).filter(v => v !== null).join('');
+      `);
+      if (convA === convB) break;
+      // Trigger another sync round
+      await execInFrame(driver, 0, `window._sendSync()`);
+      await execInFrame(driver, 1, `window._sendSync()`);
+      await sleep(1000);
+    }
+
+    assert(convA === convB,
+      `Concurrent edits converged (A="${convA}", B="${convB}")`);
+    assert(convA.includes('[') && convA.includes(']'),
+      `Both concurrent chars present: "[" and "]" in "${convA}"`);
+
+    // -------------------------------------------------------------------
+    // Test 8: Performance -- per-keystroke latency and handle counts
+    // -------------------------------------------------------------------
+    console.log('\nTest 8: Performance (30 keystrokes)');
 
     const perfResult = await execInFrame(driver, 0, `
       const oc = window._oc;
@@ -350,9 +506,9 @@ async function run() {
       `Handle count bounded after local GC: ${lastHandles} < 5000`);
 
     // -------------------------------------------------------------------
-    // Test 5: Handle GC -- watermark-based cleanup works
+    // Test 9: Handle GC -- watermark-based cleanup works
     // -------------------------------------------------------------------
-    console.log('\nTest 5: Handle GC (watermark cleanup)');
+    console.log('\nTest 9: Handle GC (watermark cleanup)');
 
     const gcResult = await execInFrame(driver, 0, `
       const oc = window._oc;
